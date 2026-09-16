@@ -55,7 +55,7 @@ Flagged variant: same schema with `"level": "low"`, `flagged: true`, plus `"warn
 ```
 GET /health          liveness
 GET /sessions/{id}   chat history
-GET /metrics         flagged-rate, fallback-rate (for the demo dashboard)
+GET /metrics         flagged-rate, fallback-rate, spend counters (Rule 8; for the demo dashboard)
 ```
 
 ## 2. Data Models
@@ -84,6 +84,11 @@ messages(msg_id PK, session_id FK, question, answer_json,
          latency_ms, created_at)
 -- router_decision: 'answer' | 'flag' | 'fallback' | 'refusal'
 -- (Rules.md #7: every routing decision persisted with retrieved chunks + scores)
+
+spend_log(spend_id PK, created_at, provider, kind,   -- kind: 'llm' | 'embedding' | 'search'
+          tokens, estimated_cost_usd)
+-- (Prompt.md Rule 8: per-call spend counters; daily/monthly caps checked against this table;
+--  GET /metrics aggregates it. Exceeding a cap -> 429 BUDGET_EXCEEDED.)
 ```
 
 ## 3. Prompt Design
@@ -144,4 +149,5 @@ Enforced via `response_format` / tool calling:
 
 ## 6. Rate Limiting & Costs
 - Per-session token bucket (dev: generous; prod: configurable)
+- Budget guard on every LLM/embedding/search call (Rule 8): per-request token limit (`MAX_REQUEST_TOKENS`), daily token cap (`DAILY_TOKEN_CAP`), monthly USD cap (`MONTHLY_SPEND_USD`) — env-configured, wired through `config.yaml`. Each call appends to the `spend_log` table; exceeding a cap returns `429 BUDGET_EXCEEDED`, never a silent surprise bill.
 - Cache answers by (question_hash, doc_set_hash) to avoid repeat spend; `doc_set_hash` = sha1 over the sorted `(doc_id, status)` pairs of the currently ingested corpus (invalidated by any ingest/delete)

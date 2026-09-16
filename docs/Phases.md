@@ -12,6 +12,9 @@
 - [ ] Docker Compose: FastAPI + Postgres + Chroma
 - [ ] CI: lint (ruff), typecheck (mypy), tests on PR
 - [ ] Env config loader + `.env.example`
+- [ ] `config.yaml` scaffold with every documented knob (thresholds 0.75/0.45, confidence weights, k=8, chunk 512/64, budget caps) — nothing magic in code (Rules §2)
+- [ ] Rate-limit middleware + budget-guard env vars (PRD security NFR; Master-Prompt Rule 8)
+- [ ] Pinned frontend toolchain (React 18, Vite 5, Node 20, pnpm 9) asserted in CI
 - [ ] README quickstart
 
 **Exit:** `docker compose up` boots all services; `/health` returns 200.

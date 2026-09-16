@@ -9,6 +9,8 @@
 | Metric | Meaning | Target |
 |--------|---------|--------|
 | **Citation precision** | % of citations that actually support their claim | >= 95% |
+
+> **Note:** RAGAS ships faithfulness and answer relevancy out of the box, but **not** citation precision. Citation precision is a **custom scorer** implemented in `evals/` (built on the grounding verifier's support check) and reported alongside the RAGAS metrics.
 | **Faithfulness (RAGAS)** | Is the answer entailed by retrieved context? | >= 0.85 |
 | **Answer relevancy (RAGAS)** | Does the answer address the question? | >= 0.80 |
 | **Unsupported-claim escape rate** | Claims reaching the user without verified support | **0** |

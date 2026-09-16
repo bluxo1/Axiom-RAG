@@ -120,7 +120,7 @@ Weights are config, tuned on the golden eval set. All inputs logged for re-tunin
 | LLM | Groq / OpenAI API | Ollama (Llama 3.1) |
 | RAG framework | LlamaIndex (ingestion + retrieval glue) | raw LangChain |
 | Embeddings | text-embedding-3-small | all-MiniLM-L6-v2 (see ADR-0001) |
-| Vector DB | ChromaDB | pgvector |
+| Vector DB | ChromaDB | pgvector (see ADR-0002) |
 | Relational DB | PostgreSQL | SQLite |
 | Web search | Tavily | Brave |
 | Evals | RAGAS + pytest | — |
