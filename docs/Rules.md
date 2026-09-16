@@ -6,7 +6,7 @@
 
 ## 1. Grounding Rules (non-negotiable)
 
-1. **No citation, no claim.** A factual claim without a verified citation never reaches the user.
+1. **No citation, no claim.** A factual claim without a verified citation never reaches the user. Verification is a hard gate that runs *before* confidence routing on every path — flagged and web-fallback answers included.
 2. **Citations must exist.** A `chunk_id` not present in the retrieved context is a bug, whatever the LLM said.
 3. **No outside knowledge.** The LLM answers from context only. If context is insufficient -> `INSUFFICIENT_EVIDENCE`, not improvisation.
 4. **Uncertainty is displayed, never hidden.** Low confidence = visible badge + warning string. No exceptions.
@@ -42,7 +42,7 @@
 
 - README quickstart must work from a clean clone (tested each phase)
 - Every env var documented in `.env.example` with a comment
-- ADRs for decisions that are hard to reverse (vector DB choice, threshold strategy)
+- ADRs live in `docs/adr/` for decisions that are hard to reverse (vector DB choice, embedding model choice, threshold strategy)
 - Public claims (eval numbers, benchmarks) must be reproducible from `evals/`
 
 ## 6. Anti-Patterns (banned)

@@ -65,14 +65,14 @@ For any use case where a wrong answer has a cost (legal, medical, academic, ente
 | FR-4 | Citation verification (every citation must exist in retrieved context) | P0 |
 | FR-5 | Confidence score per answer (hybrid: retrieval + faithfulness + coverage) | P0 |
 | FR-6 | Confidence flagging below threshold in API + UI | P0 |
-| FR-7 | Web-search fallback (Tavily/Brave) when retrieval is empty/weak | P0 |
+| FR-7 | Web-search fallback (Tavily/Brave) when retrieval is empty/weak or the model replies `INSUFFICIENT_EVIDENCE` | P0 |
 | FR-8 | Chat history persisted in Postgres | P1 |
 | FR-9 | Streaming responses | P1 |
 | FR-10 | Eval harness (RAGAS) + golden dataset | P1 |
 
 ## 8. Non-Functional Requirements
 
-- **Latency:** first token < 3s (streaming); full answer < 15s for 4k-token contexts
+- **Latency:** first verified token < 3s (streaming starts after the grounding pipeline: status event immediately, answer tokens once citations are verified); full answer < 15s for 4k-token contexts
 - **Cost:** dev runs on free tiers / local models; API spend capped via env-configured limits
 - **Reliability:** structured errors; never a silent 500
 - **Observability:** query, retrieved docs, scores, and fallback events logged to Postgres

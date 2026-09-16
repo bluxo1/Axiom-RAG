@@ -20,10 +20,10 @@
 
 ## Phase 1 - Core RAG (Week 1)
 
-- [ ] Document ingestion: PDF/TXT/MD parse -> chunk -> embed -> store
+- [ ] Document ingestion: PDF/TXT/MD/URL parse -> chunk -> embed -> store (URL via trafilatura, PRD FR-1)
 - [ ] Retrieval endpoint: top-k semantic search
 - [ ] Basic chat endpoint: grounded prompt -> answer (no verification yet)
-- [ ] Postgres: documents + messages tables
+- [ ] Postgres: documents + messages tables, chat history endpoint (`GET /sessions/{id}`)
 - [ ] Minimal chat UI: upload box + message thread
 
 **Exit:** Can upload 3 PDFs, ask questions, get sourced-looking answers end-to-end.
@@ -48,6 +48,7 @@
 - [ ] Threshold router: answer / flag / fallback
 - [ ] Tavily/Brave fallback with live-source citations
 - [ ] UI badges (green/yellow/blue) + warning copy
+- [ ] Streaming: `status` event immediately, then verified answer tokens (first verified token < 3s)
 - [ ] Logging of all scores + routing decisions to Postgres
 - [ ] pytest: mock weak retrieval -> answer is flagged or falls back, never confident
 
@@ -60,7 +61,7 @@
 - [ ] Golden dataset: 30-50 Q&A pairs over test corpus (include adversarial/out-of-corpus questions)
 - [ ] RAGAS harness: faithfulness + answer relevancy + citation precision
 - [ ] Threshold tuning from eval results; record before/after numbers for README
-- [ ] Streaming responses, latency < 3s time-to-first-token
+- [ ] Latency validation under load (P95 < 15s full answer)
 - [ ] Rate limiting + error handling sweep
 - [ ] Dockerize, deploy (Render + Vercel + Neon)
 - [ ] README: architecture diagram, eval table, demo GIF/video

@@ -47,6 +47,8 @@ Response (structured):
 }
 ```
 
+Citation id convention: the LLM emits raw `[chunk_id]` markers (e.g. `[doc9#14]`); the verifier rewrites every *verified* marker to a sequential display id (`[c1]`, `[c2]`, ...) in both `answer` and `citations[].id`. The API always exposes display ids; the `id` ↔ `chunk_id` mapping above is how the UI resolves a marker back to its source card.
+
 Flagged variant: same schema with `"level": "low"`, `flagged: true`, plus `"warning": "Sources are weak - verify before relying on this."`
 
 ### 1.3 Meta
@@ -77,7 +79,11 @@ documents(doc_id PK, name, status, created_at)
 chunks(chunk_id PK, doc_id FK, page, text)
 sessions(session_id PK, created_at)
 messages(msg_id PK, session_id FK, question, answer_json,
-         confidence, flagged, fallback_used, latency_ms, created_at)
+         confidence, confidence_breakdown jsonb, router_decision,
+         retrieved_chunk_ids jsonb, flagged, fallback_used,
+         latency_ms, created_at)
+-- router_decision: 'answer' | 'flag' | 'fallback' | 'refusal'
+-- (Rules.md #7: every routing decision persisted with retrieved chunks + scores)
 ```
 
 ## 3. Prompt Design
@@ -96,6 +102,8 @@ Context:
 {chunks}
 ```
 
+> Structured-output mode: rule 3 becomes `status: "insufficient_evidence"` in the JSON schema (§3.3) instead of a bare string. Raw `[chunk_id]` markers emitted by the model are rewritten to sequential display ids (`[c1]`, ...) by the verifier before the response leaves the API.
+
 ### 3.2 Faithfulness Self-Check Prompt
 ```
 For each (claim, cited_chunk) pair, reply VALID or INVALID with a one-line reason.
@@ -106,7 +114,13 @@ Cited text: {chunk}
 
 ### 3.3 Structured Output
 Enforced via `response_format` / tool calling:
-`{answer: str, claims: [{text: str, citation_ids: [str]}]}`
+```
+{status: "answered" | "insufficient_evidence",
+ answer: str,
+ claims: [{text: str, citation_ids: [str]}],
+ citations: [{citation_id: str, chunk_id: str}]}
+```
+`citation_ids` use raw chunk-based markers at generation time; the verifier (Architecture §3.4) rewrites verified citations to display ids `c1, c2, ...` in the final API response.
 
 ## 4. Citation UX Design
 
@@ -130,4 +144,4 @@ Enforced via `response_format` / tool calling:
 
 ## 6. Rate Limiting & Costs
 - Per-session token bucket (dev: generous; prod: configurable)
-- Cache answers by (question_hash, doc_set_hash) to avoid repeat spend
+- Cache answers by (question_hash, doc_set_hash) to avoid repeat spend; `doc_set_hash` = sha1 over the sorted `(doc_id, status)` pairs of the currently ingested corpus (invalidated by any ingest/delete)
