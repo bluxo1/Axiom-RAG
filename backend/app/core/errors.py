@@ -52,6 +52,10 @@ class ErrorCode(StrEnum):
     # unreachable — a 503, distinct from a bug (500). Raised from Phase 1's
     # ingestion and chat paths.
     PROVIDER_UNAVAILABLE = "PROVIDER_UNAVAILABLE"
+    # The LLM returned output we could not use (malformed structured JSON that
+    # survived the repair pass) — a 502, the upstream failed us (Design.md §5,
+    # Prompt.md API CONTRACT). Raised from the Phase 2 grounded-chat path.
+    INVALID_LLM_RESPONSE = "INVALID_LLM_RESPONSE"
     INTERNAL_ERROR = "INTERNAL_ERROR"
 
 

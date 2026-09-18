@@ -49,7 +49,7 @@ def _seed(
 
 
 def test_llm_call_records_spend(config: AxiomConfig, runtime: Runtime) -> None:
-    runtime.llm.complete(system_prompt="answer only from context", user_prompt="hello")
+    runtime.llm.complete_structured(system_prompt="answer only from context", user_prompt="hello")
 
     rows = _spend_rows(runtime)
     assert len(rows) == 1
@@ -72,7 +72,7 @@ def test_per_request_token_cap_is_enforced(config: AxiomConfig, runtime: Runtime
     huge_prompt = "word " * (config.budget.max_request_tokens * 2)
 
     with pytest.raises(BudgetExceededError) as excinfo:
-        runtime.llm.complete(system_prompt=huge_prompt, user_prompt="hello")
+        runtime.llm.complete_structured(system_prompt=huge_prompt, user_prompt="hello")
 
     assert (excinfo.value.details or {})["cap"] == "max_request_tokens"
     assert excinfo.value.status_code == 429
@@ -84,7 +84,7 @@ def test_daily_token_cap_blocks_the_next_call(config: AxiomConfig, runtime: Runt
     _seed(runtime, spend_id="seed-day", tokens=config.budget.daily_token_cap)
 
     with pytest.raises(BudgetExceededError) as excinfo:
-        runtime.llm.complete(system_prompt="small", user_prompt="hello")
+        runtime.llm.complete_structured(system_prompt="small", user_prompt="hello")
 
     assert (excinfo.value.details or {})["cap"] == "daily_token_cap"
 
@@ -98,7 +98,7 @@ def test_monthly_usd_cap_blocks_the_next_call(config: AxiomConfig, runtime: Runt
     )
 
     with pytest.raises(BudgetExceededError) as excinfo:
-        runtime.llm.complete(system_prompt="small", user_prompt="hello")
+        runtime.llm.complete_structured(system_prompt="small", user_prompt="hello")
 
     assert (excinfo.value.details or {})["cap"] == "monthly_spend_usd"
 

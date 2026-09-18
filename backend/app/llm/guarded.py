@@ -33,12 +33,14 @@ class GuardedLLM:
         self._guard = guard
         self._model = model
 
-    def complete(self, *, system_prompt: str, user_prompt: str) -> str:
+    def complete_structured(self, *, system_prompt: str, user_prompt: str) -> str:
         self._guard.check_request(
             texts={"system_prompt": system_prompt, "user_prompt": user_prompt}
         )
         self._guard.check_caps()
-        answer = self._inner.complete(system_prompt=system_prompt, user_prompt=user_prompt)
+        answer = self._inner.complete_structured(
+            system_prompt=system_prompt, user_prompt=user_prompt
+        )
         tokens = count_tokens(system_prompt) + count_tokens(user_prompt) + count_tokens(answer)
         self._guard.record(
             provider="llm",
