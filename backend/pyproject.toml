@@ -1,0 +1,97 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "axiom-backend"
+description = "Axiom — citation-grounded RAG agent (backend)"
+dynamic = ["version"]
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = [
+  "fastapi>=0.115,<1.0",
+  "uvicorn[standard]>=0.32,<1.0",
+  "pydantic>=2.9,<3.0",
+  "pydantic-settings>=2.5,<3.0",
+  "PyYAML>=6.0,<7.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "ruff>=0.7,<1.0",
+  "mypy>=1.13,<2.0",
+  "pytest>=8.3,<9.0",
+  # `starlette.testclient` imports `httpx2` and warns (deprecation) if it has to
+  # fall back to `httpx`. `filterwarnings = ["error"]` turns that warning into a
+  # collection failure, so the test client's own preferred package is pinned.
+  "httpx2>=2.13,<3.0",
+  "types-PyYAML>=6.0,<7.0",
+]
+
+[tool.hatch.version]
+path = "app/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+# ─── Lint / format (Rules.md §2: no lint warnings merged) ─────────────────────
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = [
+  "E",    # pycodestyle errors
+  "W",    # pycodestyle warnings
+  "F",    # pyflakes
+  "I",    # import sorting
+  "N",    # pep8-naming
+  "UP",   # pyupgrade
+  "B",    # bugbear
+  "C4",   # comprehensions
+  "SIM",  # simplify
+  "PTH",  # use pathlib
+  "PT",   # pytest style
+  "TID",  # tidy imports
+  "ARG",  # unused arguments
+  "RUF",  # ruff-specific
+  "ANN",  # missing annotations
+  "S110", # try-except-pass      (Rules.md §6: `except: pass` is banned)
+  "S112", # try-except-continue  (same rule, loop form)
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Fixtures and helpers may shadow module names; request objects go unused in
+# handlers that the framework still requires them for.
+"tests/*" = ["ARG001"]
+
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "parents"
+
+# ─── Type checking (Rules.md §2: mypy strict) ─────────────────────────────────
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unreachable = true
+warn_unused_configs = true
+files = ["app", "tests"]
+plugins = ["pydantic.mypy"]
+
+[tool.pydantic-mypy]
+init_forbid_extra = true
+init_typed = true
+warn_required_dynamic_aliases = true
+
+# ─── Tests ────────────────────────────────────────────────────────────────────
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --strict-markers --strict-config"
+filterwarnings = [
+  # Our own warnings are bugs: fail on them.
+  "error",
+  # Upstream only: starlette 1.6.0 still uses the `anyio.abc.BlockingPortal`
+  # alias that anyio 4.15 deprecated, and it fires when `starlette.testclient`
+  # is imported. Nothing in `app/` can avoid it. Drop this line once starlette
+  # moves to `anyio.from_thread.BlockingPortal`.
+  'ignore:The anyio\.abc\.BlockingPortal alias is deprecated:DeprecationWarning',
+]

@@ -1,0 +1,16 @@
+# Keep the build context to what the image actually installs.
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+tests/
+Dockerfile
+.dockerignore
