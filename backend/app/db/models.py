@@ -7,6 +7,10 @@ answer JSON, the chunk_ids that were retrieved, latency). The confidence,
 land in Phases 2-3 with the code that fills them, rather than as dead nullable
 columns now.
 
+`spend_log` is included now (Rule 8): the LLM and embedding calls that Phase 1
+introduced are the first spend, so the budget guard and its counters land with
+them — not in Phase 3.
+
 JSON columns render as `jsonb` on PostgreSQL (Design.md §2.2) and fall back to
 portable `JSON` on SQLite, which backs the test suite.
 """
@@ -21,6 +25,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Integer,
+    Numeric,
     String,
     Text,
     func,
@@ -102,3 +107,25 @@ class Message(Base):
     )
 
     session: Mapped[Session] = relationship(back_populates="messages")
+
+
+class SpendLog(Base):
+    """One row per paid provider call (Design.md §2.2, Prompt.md Rule 8).
+
+    `tokens` is the provider-reported usage when available and a tiktoken
+    estimate otherwise; `estimated_cost_usd` uses the config-declared list
+    price, deliberately conservative. The daily/monthly caps in the budget
+    guard are checked against these rows before a call is made.
+    """
+
+    __tablename__ = "spend_log"
+
+    spend_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    provider: Mapped[str] = mapped_column(String(32), nullable=False)
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)  # llm | embedding | search
+    model: Mapped[str] = mapped_column(String(128), nullable=False)
+    tokens: Mapped[int] = mapped_column(Integer, nullable=False)
+    estimated_cost_usd: Mapped[float] = mapped_column(Numeric(12, 6), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )

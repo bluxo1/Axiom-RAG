@@ -21,6 +21,11 @@ chunking:
   size_tokens: 512
   overlap_tokens: 64
 
+# ─── Ingestion limits (PRD.md §8 security) ────────────────────────────────────
+# Uploads are size-capped and rejected with 413 before parsing/embedding.
+ingestion:
+  max_upload_mb: 20
+
 # ADR-0001 — the active embedding model is declared once, here, never hardcoded.
 # Switching it requires full re-ingestion; collections are namespaced per model
 # so incompatible vectors can never mix.
@@ -29,6 +34,9 @@ embedding:
   model: text-embedding-3-small
   dimensions: 1536
   batch_size: 64
+  # Rule 8 spend accounting: estimated USD per 1M tokens (list price), used by
+  # the budget guard to estimate cost — not invoicing truth.
+  price_per_million_usd: 0.02
 
 # ADR-0002 — backend is a config change, not a code change. Cosine is pinned so
 # dev (Chroma) and prod (pgvector) score identically.
@@ -56,6 +64,9 @@ generation:
   max_repair_attempts: 1
   # Design.md §5 — LLM timeout retries once, then 504.
   max_timeout_retries: 1
+  # Rule 8 spend accounting: blended per-1M-token estimate (list price) used by
+  # the budget guard — not invoicing truth.
+  price_per_million_usd: 0.60
 
 # ─── Grounding (hard gate) ────────────────────────────────────────────────────
 # Architecture.md §3.4 — verification runs before confidence routing on every

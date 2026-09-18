@@ -98,8 +98,9 @@ warn_required_dynamic_aliases = true
 
 # Third-party libraries without usable type information for a 3.11 target.
 # `follow_imports = "skip"` stops mypy analyzing their internals — notably
-# numpy (pulled in by chromadb), whose 3.12-only `type` statements in its stubs
-# fail to parse under python_version 3.11. Our own code stays fully strict.
+# numpy (pulled in by chromadb and tiktoken), whose 3.12-only `type` statements
+# in its stubs fail to parse under python_version 3.11. Our own code stays
+# fully strict.
 [[tool.mypy.overrides]]
 module = [
   "llama_index.*",
@@ -107,6 +108,8 @@ module = [
   "trafilatura",
   "pypdf",
   "pypdf.*",
+  "tiktoken",
+  "tiktoken.*",
   "numpy",
 ]
 follow_imports = "skip"

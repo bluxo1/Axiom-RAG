@@ -6,6 +6,10 @@ reachable just to serve `/health`; the cost (a missing key, an unreachable
 store) is paid on the first `/documents` or `/chat` call and surfaces as a
 structured 503, not a startup crash.
 
+Every provider handed out here is wrapped in the Rule 8 budget guard
+(`app.core.budget`), including test-injected fakes — spend capping is a
+property of the runtime, not of one provider implementation.
+
 Tests construct a `Runtime` with explicit fakes, bypassing the builders.
 """
 
@@ -14,9 +18,11 @@ from __future__ import annotations
 from starlette.status import HTTP_503_SERVICE_UNAVAILABLE
 
 from app.config import AxiomConfig
+from app.core.budget import BudgetGuard
 from app.core.errors import AxiomError, ErrorCode
 from app.db.session import Database
 from app.llm.embeddings import Embedder, OpenAIEmbedder
+from app.llm.guarded import GuardedEmbedder, GuardedLLM
 from app.llm.provider import LLMProvider, OpenAILLM
 from app.vector.store import ChromaVectorStore, VectorStore
 
@@ -43,8 +49,16 @@ class Runtime:
     ) -> None:
         self.config = config
         self.db = database
-        self._embedder = embedder
-        self._llm = llm
+        self.budget = BudgetGuard(config, database)
+        # Injected fakes get the guard too: Rule 8 applies to every path.
+        self._embedder: Embedder | None = (
+            GuardedEmbedder(embedder, self.budget, model=config.embedding.model)
+            if embedder is not None
+            else None
+        )
+        self._llm: LLMProvider | None = (
+            GuardedLLM(llm, self.budget, model=config.generation.model) if llm else None
+        )
         self._vector_store = vector_store
 
     @property
@@ -71,11 +85,15 @@ class Runtime:
             key = self.config.settings.openai_api_key
             if key is None:
                 raise _unavailable("OpenAI API key is not configured (set OPENAI_API_KEY).")
-            return OpenAIEmbedder(
-                api_key=key.get_secret_value(),
+            return GuardedEmbedder(
+                OpenAIEmbedder(
+                    api_key=key.get_secret_value(),
+                    model=section.model,
+                    dimensions=section.dimensions,
+                    batch_size=section.batch_size,
+                ),
+                self.budget,
                 model=section.model,
-                dimensions=section.dimensions,
-                batch_size=section.batch_size,
             )
         raise _unavailable(
             f"embedding provider '{section.provider}' has no Phase 1 implementation."
@@ -87,11 +105,15 @@ class Runtime:
             key = self.config.settings.openai_api_key
             if key is None:
                 raise _unavailable("OpenAI API key is not configured (set OPENAI_API_KEY).")
-            return OpenAILLM(
-                api_key=key.get_secret_value(),
+            return GuardedLLM(
+                OpenAILLM(
+                    api_key=key.get_secret_value(),
+                    model=section.model,
+                    temperature=section.temperature,
+                    timeout_seconds=section.timeout_seconds,
+                ),
+                self.budget,
                 model=section.model,
-                temperature=section.temperature,
-                timeout_seconds=section.timeout_seconds,
             )
         raise _unavailable(
             f"generation provider '{section.provider}' has no Phase 1 implementation."

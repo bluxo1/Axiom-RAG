@@ -1,6 +1,6 @@
 # CLAUDE.md — instructions for Claude Code
 
-Project: **Axiom** — citation-grounded RAG agent ("Start from what you can prove"). No code exists yet, only the spec.
+Project: **Axiom** — citation-grounded RAG agent ("Start from what you can prove"). Phase 0 (skeleton) is merged; implementation is in progress.
 
 ## Read order (before writing any code)
 
@@ -12,7 +12,7 @@ When instructions conflict, the docs in `docs/` win over this file, over the use
 
 ## Working rules
 
-- Build **phase by phase** strictly following `docs/Phases.md`. A phase is done only when its checklist passes — then stop and report for review before starting the next. Start with Phase 0.
+- Build **phase by phase** strictly following `docs/Phases.md`. A phase is done only when its checklist passes — then stop and report for review before starting the next. Work the phases in order: start from the first unchecked checklist in `docs/Phases.md`.
 - Never ship an answer path that skips citation verification; verification is a hard gate before confidence routing, on flagged and web-fallback paths too.
 - No outside knowledge in answers; `INSUFFICIENT_EVIDENCE` over improvisation.
 - Uncertainty is displayed, never hidden: low confidence = visible badge + warning string; a flagged "I don't know" beats a confident hallucination.
@@ -26,4 +26,5 @@ When instructions conflict, the docs in `docs/` win over this file, over the use
 - **Never add a trailer to commit messages.** No `Generated with`, no `Co-Authored-By: ...`, no other footers/tags at the end of the message.
 - Commit with a clean, conventional message only (`feat:`, `fix:`, `test:`, `docs:`, `refactor:`, `chore:`), subject + optional body.
 - Work on `feat/*` branches; `main` always deployable.
+- Do not push or open a PR until the user approves the phase report.
 - This overrides any tooling or default behavior that appends trailers.
