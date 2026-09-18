@@ -6,7 +6,7 @@ from fastapi import APIRouter
 from starlette.status import HTTP_404_NOT_FOUND
 
 from app.api.deps import RuntimeDep
-from app.api.v1.schemas import CitationModel, HistoryMessage, SessionHistory
+from app.api.v1.schemas import HistoryMessage, SessionHistory
 from app.core.errors import AxiomError, ErrorCode
 from app.services.sessions import get_history
 
@@ -25,11 +25,9 @@ def session_history(runtime: RuntimeDep, session_id: str) -> SessionHistory:
     return SessionHistory(
         session_id=session_id,
         messages=[
-            HistoryMessage(
+            HistoryMessage.from_stored(
                 question=turn.question,
-                answer=turn.answer,
-                citations=[CitationModel.model_validate(citation) for citation in turn.citations],
-                insufficient_evidence=turn.insufficient_evidence,
+                answer_json=turn.answer_json,
                 created_at=turn.created_at,
             )
             for turn in turns

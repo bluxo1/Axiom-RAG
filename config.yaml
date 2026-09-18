@@ -101,6 +101,9 @@ fallback:
   provider: tavily # tavily | brave
   max_results: 5
   timeout_seconds: 10
+  # Rule 8 spend accounting: web search is billed per call, not per token. This
+  # flat per-search estimate (list price, conservative) trips the monthly cap.
+  price_per_search_usd: 0.008
 
 # ─── Budget guard (Prompt.md Rule 8, Design.md §6) ────────────────────────────
 # Every LLM/embedding/search call passes the guard. Exceeding a cap returns

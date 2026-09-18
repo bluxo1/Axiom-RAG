@@ -44,7 +44,12 @@ class TextChunk:
 
 @dataclass(frozen=True)
 class RetrievedChunk:
-    """A chunk returned by the vector store for a query, with its score."""
+    """A chunk offered as grounding context, with its retrieval score.
+
+    Usually a chunk from the ingested corpus (`source="kb"`). A web-fallback
+    result (Architecture.md §3.6) is the same shape with `source="web"` and a
+    live `url`, so it re-enters generation → grounding → confidence identically.
+    """
 
     chunk_id: str
     doc_id: str
@@ -52,15 +57,17 @@ class RetrievedChunk:
     text: str
     score: float
     page: int | None = None
+    source: str = "kb"
+    url: str | None = None
 
 
 @dataclass(frozen=True)
 class Citation:
-    """A source shown alongside an answer.
+    """A verified source shown alongside an answer (Design.md §1.2).
 
-    Phase 1 has no verifier, so every retrieved chunk used as context is offered
-    as a citation with a sequential display id. The support/existence checks that
-    gate these (Architecture.md §3.4) arrive in Phase 2.
+    Only citations that passed the grounding gate (Architecture.md §3.4) become
+    a `Citation`; each carries a sequential display id (`c1, c2, ...`). A web
+    citation (`source="web"`) carries the live `url` instead of a page.
     """
 
     id: str  # display id: c1, c2, ...
@@ -70,6 +77,22 @@ class Citation:
     score: float
     source: str = "kb"
     page: int | None = None
+    url: str | None = None
+
+
+@dataclass(frozen=True)
+class ConfidenceBreakdown:
+    """The three hybrid-confidence components and their weighted total.
+
+    `score` is `w_retrieval·retrieval + w_faithfulness·faithfulness +
+    w_coverage·coverage` (Architecture.md §3.5); `level` is the routed band.
+    """
+
+    score: float
+    level: str  # "high" | "low" | "web"
+    retrieval: float
+    faithfulness: float
+    coverage: float
 
 
 @dataclass(frozen=True)
@@ -82,3 +105,8 @@ class ChatResult:
     session_id: str
     insufficient_evidence: bool = False
     used_chunk_ids: tuple[str, ...] = field(default_factory=tuple)
+    confidence: ConfidenceBreakdown | None = None
+    router_decision: str = "refusal"  # answer | flag | fallback | refusal
+    flagged: bool = False
+    fallback_used: bool = False
+    warning: str | None = None

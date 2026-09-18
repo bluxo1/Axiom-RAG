@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from app.rag.generation import RawStructuredAnswer
 from app.rag.types import Citation, RetrievedChunk
@@ -69,18 +69,51 @@ def _supports(claim_text: str, chunk_text: str, min_overlap: float) -> bool:
 
 
 @dataclass(frozen=True)
+class GroundingStats:
+    """Counts the confidence scorer needs (Architecture.md §3.5).
+
+    * `faithfulness = verified_citations / proposed_citations` — how many of the
+      citations the model emitted actually held up.
+    * `coverage = grounded_claims / total_claims` — how much of the answer is
+      backed by at least one verified citation.
+
+    A ratio over an empty denominator is 0.0 (nothing proposed cannot be
+    faithful; no claims cannot be covered).
+    """
+
+    total_claims: int = 0
+    grounded_claims: int = 0
+    proposed_citations: int = 0
+    verified_citations: int = 0
+
+    @property
+    def faithfulness(self) -> float:
+        if self.proposed_citations == 0:
+            return 0.0
+        return self.verified_citations / self.proposed_citations
+
+    @property
+    def coverage(self) -> float:
+        if self.total_claims == 0:
+            return 0.0
+        return self.grounded_claims / self.total_claims
+
+
+@dataclass(frozen=True)
 class GroundingOutcome:
     """Result of the hard gate.
 
     `grounded=False` means nothing survived verification: the caller returns the
     insufficient-evidence refusal. When `grounded=True`, `answer` is rebuilt from
     surviving claims and every `[cN]` marker in it has a matching citation.
+    `stats` feeds the confidence scorer either way (Architecture.md §3.5).
     """
 
     grounded: bool
     answer: str = ""
     citations: tuple[Citation, ...] = ()
     used_chunk_ids: tuple[str, ...] = ()
+    stats: GroundingStats = field(default_factory=GroundingStats)
 
 
 def verify_and_ground(
@@ -98,21 +131,32 @@ def verify_and_ground(
 
     # (claim_text, [verified chunk_id, ...]) for claims that keep >=1 citation.
     surviving: list[tuple[str, list[str]]] = []
+    proposed_citations = 0
+    verified_citations = 0
     for claim in parsed.claims:
         valid: list[str] = []
         for marker in claim.citation_ids:
+            proposed_citations += 1
             chunk_id = marker_to_chunk.get(marker, marker)  # tolerate direct chunk_id markers
             if chunk_id not in by_id:  # existence check
                 continue
             if not _supports(claim.text, by_id[chunk_id].text, support_keyword_overlap_min):
                 continue
+            verified_citations += 1
             if chunk_id not in valid:
                 valid.append(chunk_id)
         if valid:
             surviving.append((claim.text, valid))
 
+    stats = GroundingStats(
+        total_claims=len(parsed.claims),
+        grounded_claims=len(surviving),
+        proposed_citations=proposed_citations,
+        verified_citations=verified_citations,
+    )
+
     if not surviving:
-        return GroundingOutcome(grounded=False)
+        return GroundingOutcome(grounded=False, stats=stats)
 
     display_of: dict[str, str] = {}
     order: list[str] = []
@@ -134,7 +178,8 @@ def verify_and_ground(
             text=by_id[chunk_id].text,
             score=by_id[chunk_id].score,
             page=by_id[chunk_id].page,
-            source="kb",
+            source=by_id[chunk_id].source,
+            url=by_id[chunk_id].url,
         )
         for chunk_id in order
     )
@@ -143,4 +188,5 @@ def verify_and_ground(
         answer=" ".join(rebuilt),
         citations=citations,
         used_chunk_ids=tuple(order),
+        stats=stats,
     )

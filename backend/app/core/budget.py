@@ -78,9 +78,15 @@ def _tomorrow_start_utc(now: datetime) -> datetime:
 
 @dataclass(frozen=True)
 class Usage:
-    """Token usage for one provider call."""
+    """Usage for one provider call.
+
+    `tokens` feeds the daily token cap. `cost_usd`, when set, overrides the
+    token-derived cost estimate — used for per-call-priced calls like web
+    search, which is not billed per token.
+    """
 
     tokens: int
+    cost_usd: float | None = None
 
 
 @dataclass(frozen=True)
@@ -204,8 +210,10 @@ class BudgetGuard:
 
     def record(self, *, provider: str, kind: str, model: str, usage: Usage) -> None:
         """Append one `spend_log` row for a completed (or billed) call."""
-        price = self._price_for(kind)
-        cost = usage.tokens / 1_000_000 * price
+        if usage.cost_usd is not None:
+            cost = usage.cost_usd
+        else:
+            cost = usage.tokens / 1_000_000 * self._price_for(kind)
         with self._db.session() as session:
             session.add(
                 SpendLog(

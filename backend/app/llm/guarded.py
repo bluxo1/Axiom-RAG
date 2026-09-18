@@ -23,6 +23,7 @@ from collections.abc import Sequence
 from app.core.budget import BudgetGuard, Usage, count_tokens
 from app.llm.embeddings import Embedder
 from app.llm.provider import LLMProvider
+from app.search.provider import WebResult, WebSearchProvider
 
 
 class GuardedLLM:
@@ -89,3 +90,32 @@ class GuardedEmbedder:
             usage=Usage(tokens=count_tokens(text)),
         )
         return vector
+
+
+class GuardedWebSearch:
+    """WebSearchProvider decorator: caps check, then per-call spend logging.
+
+    Web search is billed per call, not per token (Rule 8), so the recorded row
+    carries a flat `cost_usd` and a token estimate (query + result text) that
+    still contributes to the daily token cap.
+    """
+
+    def __init__(
+        self, inner: WebSearchProvider, guard: BudgetGuard, *, provider: str, price_usd: float
+    ) -> None:
+        self._inner = inner
+        self._guard = guard
+        self._provider = provider
+        self._price_usd = price_usd
+
+    def search(self, query: str, *, max_results: int) -> list[WebResult]:
+        self._guard.check_caps()
+        results = self._inner.search(query, max_results=max_results)
+        tokens = count_tokens(query) + sum(count_tokens(result.content) for result in results)
+        self._guard.record(
+            provider=self._provider,
+            kind="search",
+            model=self._provider,
+            usage=Usage(tokens=tokens, cost_usd=self._price_usd),
+        )
+        return results

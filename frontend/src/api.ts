@@ -17,6 +17,13 @@ export interface Citation {
   quote: string;
   score: number;
   source: string;
+  url?: string | null;
+}
+
+export interface Confidence {
+  score: number;
+  level: "high" | "low" | "web";
+  breakdown: { retrieval: number; faithfulness: number; coverage: number };
 }
 
 export interface ChatResponse {
@@ -24,6 +31,10 @@ export interface ChatResponse {
   citations: Citation[];
   insufficient_evidence: boolean;
   session_id: string;
+  confidence?: Confidence | null;
+  flagged?: boolean;
+  fallback_used?: boolean;
+  warning?: string | null;
 }
 
 interface ErrorEnvelope {
@@ -70,4 +81,92 @@ export function chat(question: string, sessionId: string | null): Promise<ChatRe
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ question, session_id: sessionId }),
   });
+}
+
+export interface StreamHandlers {
+  onStatus?: (state: string) => void;
+  onToken?: (text: string) => void;
+}
+
+// Consume POST /chat/stream (SSE). The status event arrives first, then the
+// verified answer token-by-token, then a `done` event with the full payload —
+// which is what this resolves with. Tokens are already verified server-side
+// (the grounding gate runs before any token is sent), so callers can render
+// them live without risking an unverified claim on screen.
+export async function chatStream(
+  question: string,
+  sessionId: string | null,
+  handlers: StreamHandlers = {},
+): Promise<ChatResponse> {
+  const response = await fetch(`${API_BASE_URL}/chat/stream`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ question, session_id: sessionId }),
+  });
+  if (!response.ok || !response.body) {
+    let message = `request failed (${response.status})`;
+    try {
+      const body = (await response.json()) as ErrorEnvelope;
+      if (body.error?.message) {
+        message = body.error.message;
+      }
+    } catch {
+      // Non-JSON error body: keep the status-based message.
+    }
+    throw new Error(message);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let done: ChatResponse | null = null;
+
+  for (;;) {
+    const { value, done: finished } = await reader.read();
+    if (finished) {
+      break;
+    }
+    buffer += decoder.decode(value, { stream: true });
+    // Frames are separated by a blank line; process every complete one.
+    let split: number;
+    while ((split = buffer.indexOf("\n\n")) !== -1) {
+      const frame = buffer.slice(0, split);
+      buffer = buffer.slice(split + 2);
+      const parsed = parseFrame(frame);
+      if (!parsed) {
+        continue;
+      }
+      if (parsed.event === "status") {
+        handlers.onStatus?.(String((parsed.data as { state?: string }).state ?? ""));
+      } else if (parsed.event === "token") {
+        handlers.onToken?.(String((parsed.data as { text?: string }).text ?? ""));
+      } else if (parsed.event === "done") {
+        done = parsed.data as ChatResponse;
+      } else if (parsed.event === "error") {
+        const err = parsed.data as { message?: string };
+        throw new Error(err.message ?? "stream failed");
+      }
+    }
+  }
+
+  if (done === null) {
+    throw new Error("stream ended before a complete answer");
+  }
+  return done;
+}
+
+function parseFrame(frame: string): { event: string; data: unknown } | null {
+  let event = "";
+  let data = "";
+  for (const line of frame.split("\n")) {
+    if (line.startsWith("event: ")) {
+      event = line.slice("event: ".length);
+    } else if (line.startsWith("data: ")) {
+      data = line.slice("data: ".length);
+    }
+  }
+  if (!event || !data) {
+    return null;
+  }
+  return { event, data: JSON.parse(data) };
 }

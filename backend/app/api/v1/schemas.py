@@ -1,18 +1,18 @@
 """Request/response models for the v1 API (Design.md §1).
 
-Phase 1 subset: the chat response carries `answer`, `citations`, and
-`insufficient_evidence`. The `confidence`, `flagged`, and `fallback_used` fields
-from Design.md §1.2 are added in Phases 2-3 by the code that computes them,
-rather than shipped now as hardcoded placeholders (Rules.md §6).
+The chat response carries `answer`, `citations`, `insufficient_evidence`, and —
+from Phase 3 — the `confidence` block, `flagged`, `fallback_used`, and an
+optional `warning` (Design.md §1.2), all computed by the confidence router.
 """
 
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel, Field
 
-from app.rag.types import ChatResult, Citation, RetrievedChunk
+from app.rag.types import ChatResult, Citation, ConfidenceBreakdown, RetrievedChunk
 
 
 class DocumentSummary(BaseModel):
@@ -33,7 +33,7 @@ class UrlIngestRequest(BaseModel):
 
 
 class CitationModel(BaseModel):
-    """A source card (Design.md §1.2, §4)."""
+    """A source card (Design.md §1.2, §4). Web citations carry `url`, not a page."""
 
     id: str
     chunk_id: str
@@ -42,6 +42,7 @@ class CitationModel(BaseModel):
     quote: str
     score: float
     source: str
+    url: str | None = None
 
     @classmethod
     def from_domain(cls, citation: Citation) -> CitationModel:
@@ -53,6 +54,7 @@ class CitationModel(BaseModel):
             quote=citation.text,
             score=citation.score,
             source=citation.source,
+            url=citation.url,
         )
 
 
@@ -86,6 +88,26 @@ class SearchResponse(BaseModel):
     results: list[RetrievedChunkModel]
 
 
+class ConfidenceModel(BaseModel):
+    """Hybrid confidence block (Design.md §1.2, Architecture.md §3.5)."""
+
+    score: float
+    level: str
+    breakdown: dict[str, float]
+
+    @classmethod
+    def from_domain(cls, breakdown: ConfidenceBreakdown) -> ConfidenceModel:
+        return cls(
+            score=breakdown.score,
+            level=breakdown.level,
+            breakdown={
+                "retrieval": breakdown.retrieval,
+                "faithfulness": breakdown.faithfulness,
+                "coverage": breakdown.coverage,
+            },
+        )
+
+
 class ChatRequest(BaseModel):
     question: str = Field(min_length=1)
     session_id: str | None = None
@@ -96,6 +118,10 @@ class ChatResponse(BaseModel):
     citations: list[CitationModel]
     insufficient_evidence: bool
     session_id: str
+    confidence: ConfidenceModel | None = None
+    flagged: bool = False
+    fallback_used: bool = False
+    warning: str | None = None
 
     @classmethod
     def from_domain(cls, result: ChatResult) -> ChatResponse:
@@ -104,6 +130,14 @@ class ChatResponse(BaseModel):
             citations=[CitationModel.from_domain(citation) for citation in result.citations],
             insufficient_evidence=result.insufficient_evidence,
             session_id=result.session_id,
+            confidence=(
+                ConfidenceModel.from_domain(result.confidence)
+                if result.confidence is not None
+                else None
+            ),
+            flagged=result.flagged,
+            fallback_used=result.fallback_used,
+            warning=result.warning,
         )
 
 
@@ -113,6 +147,37 @@ class HistoryMessage(BaseModel):
     citations: list[CitationModel]
     insufficient_evidence: bool
     created_at: datetime
+    confidence: ConfidenceModel | None = None
+    flagged: bool = False
+    fallback_used: bool = False
+    warning: str | None = None
+
+    @classmethod
+    def from_stored(
+        cls, *, question: str, answer_json: dict[str, Any], created_at: datetime
+    ) -> HistoryMessage:
+        """Rebuild a history turn from the stored verbatim payload."""
+        confidence_raw = answer_json.get("confidence")
+        confidence = (
+            ConfidenceModel(
+                score=float(confidence_raw["score"]),
+                level=str(confidence_raw["level"]),
+                breakdown={k: float(v) for k, v in (confidence_raw["breakdown"] or {}).items()},
+            )
+            if confidence_raw is not None
+            else None
+        )
+        return cls(
+            question=question,
+            answer=str(answer_json.get("answer", "")),
+            citations=[CitationModel(**citation) for citation in answer_json.get("citations", [])],
+            insufficient_evidence=bool(answer_json.get("insufficient_evidence", False)),
+            created_at=created_at,
+            confidence=confidence,
+            flagged=bool(answer_json.get("flagged", False)),
+            fallback_used=bool(answer_json.get("fallback_used", False)),
+            warning=answer_json.get("warning"),
+        )
 
 
 class SessionHistory(BaseModel):

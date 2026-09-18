@@ -13,6 +13,7 @@ from app.config import AxiomConfig
 from app.db.session import Database
 from app.llm.embeddings import HashingEmbedder
 from app.llm.provider import INSUFFICIENT_EVIDENCE_JSON, ScriptedLLM
+from app.search.provider import ScriptedWebSearch, WebResult
 from app.services.runtime import Runtime
 from app.vector.store import InMemoryVectorStore
 
@@ -83,12 +84,15 @@ def make_runtime(
     llm_responses: Iterable[str] = (),
     llm_default: str = INSUFFICIENT_EVIDENCE_JSON,
     embed_dimensions: int = 64,
+    web_results: Sequence[WebResult] = (),
 ) -> Runtime:
     """An offline runtime: SQLite + deterministic fake providers.
 
     The same `HashingEmbedder` embeds documents and queries, so cosine retrieval
     in `InMemoryVectorStore` is meaningful; `ScriptedLLM` returns queued
     structured-JSON answers (CLAUDE.md: recorded fixtures, never live calls).
+    `ScriptedWebSearch` defaults to returning nothing, so the Phase 3 fallback
+    path is wired but yields the honest refusal unless a test supplies results.
     """
     database = Database(TEST_DATABASE_URL)
     database.create_all()
@@ -98,4 +102,5 @@ def make_runtime(
         embedder=HashingEmbedder(embed_dimensions),
         llm=ScriptedLLM(llm_responses, default=llm_default),
         vector_store=InMemoryVectorStore(),
+        web_search=ScriptedWebSearch(list(web_results)),
     )

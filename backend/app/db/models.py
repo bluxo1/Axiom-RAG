@@ -1,11 +1,10 @@
 """SQLAlchemy models (Design.md §2.2).
 
-Column subset for Phase 1: the query path here is retrieve -> generate -> answer
-with *no* verification, so `messages` stores what that path produces (question,
-answer JSON, the chunk_ids that were retrieved, latency). The confidence,
-`router_decision`, `flagged`, and `fallback_used` columns from Design.md §2.2
-land in Phases 2-3 with the code that fills them, rather than as dead nullable
-columns now.
+`messages` stores what one chat turn produces. Phase 3 adds the confidence
+routing columns from Design.md §2.2 (`confidence`, `confidence_breakdown`,
+`router_decision`, `flagged`, `fallback_used`) alongside the Phase 1 columns,
+now that the code that fills them exists — Rule 7: every routing decision is
+persisted with its retrieved chunks and scores.
 
 `spend_log` is included now (Rule 8): the LLM and embedding calls that Phase 1
 introduced are the first spend, so the budget guard and its counters land with
@@ -22,6 +21,7 @@ from typing import Any
 
 from sqlalchemy import (
     JSON,
+    Boolean,
     DateTime,
     ForeignKey,
     Integer,
@@ -97,10 +97,18 @@ class Message(Base):
         String(36), ForeignKey("sessions.session_id", ondelete="CASCADE"), nullable=False
     )
     question: Mapped[str] = mapped_column(Text, nullable=False)
-    # The full structured answer payload (answer text + citations) as returned
-    # to the client, so history replays exactly what was shown.
+    # The full structured answer payload (answer text + citations + confidence)
+    # as returned to the client, so history replays exactly what was shown.
     answer_json: Mapped[dict[str, Any]] = mapped_column(JsonColumn, nullable=False)
+    # Confidence routing (Design.md §2.2, Architecture.md §3.5), populated from
+    # Phase 3. Nullable because a refusal (no grounded answer) has no score.
+    confidence: Mapped[float | None] = mapped_column(Numeric(6, 4), nullable=True)
+    confidence_breakdown: Mapped[dict[str, Any] | None] = mapped_column(JsonColumn, nullable=True)
+    # 'answer' | 'flag' | 'fallback' | 'refusal' (Rule 7: every decision logged).
+    router_decision: Mapped[str] = mapped_column(String(16), nullable=False)
     retrieved_chunk_ids: Mapped[list[str]] = mapped_column(JsonColumn, nullable=False)
+    flagged: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    fallback_used: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     latency_ms: Mapped[int] = mapped_column(Integer, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
