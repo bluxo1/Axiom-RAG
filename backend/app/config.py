@@ -40,6 +40,7 @@ LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 UnitFloat = Annotated[float, Field(ge=0.0, le=1.0)]
 PositiveInt = Annotated[int, Field(gt=0)]
 PositiveFloat = Annotated[float, Field(gt=0.0)]
+NonNegativeFloat = Annotated[float, Field(ge=0.0)]
 
 
 class ConfigError(RuntimeError):
@@ -94,12 +95,15 @@ class EmbeddingSection(StrictModel):
 
     Declared once, here. Switching it requires full re-ingestion, so the
     collection name is namespaced by model to keep incompatible vectors apart.
+    `price_per_million_usd` feeds the Rule 8 spend estimate (Design.md §6):
+    a conservative list-price number used to trip caps early, not invoicing.
     """
 
     provider: Literal["openai", "sentence-transformers"]
     model: str = Field(min_length=1)
     dimensions: PositiveInt
     batch_size: PositiveInt
+    price_per_million_usd: NonNegativeFloat
 
     @property
     def slug(self) -> str:
@@ -123,6 +127,16 @@ class VectorStoreSection(StrictModel):
     collection_prefix: str = Field(min_length=1)
 
 
+class IngestionSection(StrictModel):
+    """Ingestion limits (PRD.md §8 security: bounded, rate-limited inputs).
+
+    Uploads are streamed and rejected with 413 before any parsing or
+    embedding work once they exceed `max_upload_mb`.
+    """
+
+    max_upload_mb: PositiveInt
+
+
 class RetrievalSection(StrictModel):
     """Top-k semantic search (Architecture.md §3.2)."""
 
@@ -138,6 +152,9 @@ class GenerationSection(StrictModel):
     timeout_seconds: PositiveFloat
     max_repair_attempts: Annotated[int, Field(ge=0)]
     max_timeout_retries: Annotated[int, Field(ge=0)]
+    # Rule 8 spend accounting: per-1M-token estimate (blended input + output
+    # list price, deliberately the larger of the two) used by the budget guard.
+    price_per_million_usd: NonNegativeFloat
 
 
 class GroundingSection(StrictModel):
@@ -247,6 +264,7 @@ class Knobs(StrictModel):
 
     app: AppSection
     chunking: ChunkingSection
+    ingestion: IngestionSection
     embedding: EmbeddingSection
     vector_store: VectorStoreSection
     retrieval: RetrievalSection
@@ -328,6 +346,7 @@ class AxiomConfig:
         self.settings = settings
         self.app = knobs.app
         self.chunking = knobs.chunking
+        self.ingestion = knobs.ingestion
         self.embedding = knobs.embedding
         self.vector_store = knobs.vector_store
         self.retrieval = knobs.retrieval

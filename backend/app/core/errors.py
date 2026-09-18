@@ -37,13 +37,17 @@ class ErrorCode(StrEnum):
     """Stable, machine-readable error codes.
 
     Codes are added as the phase that raises them lands, so every member here
-    is reachable. Phase 3 adds `BUDGET_EXCEEDED` alongside the budget guard.
+    is reachable. `BUDGET_EXCEEDED` arrives with the Rule 8 budget guard, which
+    is active from Phase 1 because that is when LLM/embedding spend begins.
     """
 
     VALIDATION_ERROR = "VALIDATION_ERROR"
     NOT_FOUND = "NOT_FOUND"
     METHOD_NOT_ALLOWED = "METHOD_NOT_ALLOWED"
     RATE_LIMITED = "RATE_LIMITED"
+    # A configured spend cap would be crossed (Rule 8): 429, retry later when
+    # the daily/monthly window resets. Distinct from RATE_LIMITED (request rate).
+    BUDGET_EXCEEDED = "BUDGET_EXCEEDED"
     # A required provider (LLM/embeddings/vector store) is not configured or is
     # unreachable — a 503, distinct from a bug (500). Raised from Phase 1's
     # ingestion and chat paths.
