@@ -44,6 +44,10 @@ class ErrorCode(StrEnum):
     NOT_FOUND = "NOT_FOUND"
     METHOD_NOT_ALLOWED = "METHOD_NOT_ALLOWED"
     RATE_LIMITED = "RATE_LIMITED"
+    # A required provider (LLM/embeddings/vector store) is not configured or is
+    # unreachable — a 503, distinct from a bug (500). Raised from Phase 1's
+    # ingestion and chat paths.
+    PROVIDER_UNAVAILABLE = "PROVIDER_UNAVAILABLE"
     INTERNAL_ERROR = "INTERNAL_ERROR"
 
 

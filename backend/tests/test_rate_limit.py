@@ -17,6 +17,7 @@ from starlette.requests import Request
 from app.config import AxiomConfig, Knobs, RateLimitSection, Settings
 from app.core.rate_limit import SESSION_HEADER, TokenBucketLimiter, default_identity
 from app.main import create_app
+from tests.helpers import make_runtime
 
 HEALTH = "/api/v1/health"
 
@@ -160,14 +161,16 @@ TIGHT_LIMIT = RateLimitSection(
 
 def _app_with_limit(knobs: Knobs, section: RateLimitSection) -> FastAPI:
     config = AxiomConfig(Settings(), knobs.model_copy(update={"rate_limit": section}))
-    return create_app(config)
+    return create_app(config, runtime=make_runtime(config))
 
 
 @pytest.fixture
 def tight_client(knobs: Knobs) -> Iterator[TestClient]:
     """A client with a two-request burst and effectively no refill."""
-    with TestClient(_app_with_limit(knobs, TIGHT_LIMIT)) as test_client:
+    app = _app_with_limit(knobs, TIGHT_LIMIT)
+    with TestClient(app) as test_client:
         yield test_client
+    app.state.runtime.db.dispose()
 
 
 def test_over_budget_requests_get_a_structured_429(tight_client: TestClient) -> None:
@@ -213,7 +216,9 @@ def test_limiter_can_be_disabled(knobs: Knobs) -> None:
         max_tracked_identities=10,
     )
 
-    with TestClient(_app_with_limit(knobs, section)) as test_client:
+    app = _app_with_limit(knobs, section)
+    with TestClient(app) as test_client:
         statuses = [test_client.get(HEALTH).status_code for _ in range(5)]
+    app.state.runtime.db.dispose()
 
     assert statuses == [200] * 5
