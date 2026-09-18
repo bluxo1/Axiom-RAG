@@ -86,6 +86,19 @@ jobs:
       - name: Boot the stack and wait for health
         run: docker compose up --build --wait --wait-timeout 180
 
+      # chroma has no container healthcheck (image >= 1.5.7 ships without curl,
+      # chroma-core/chroma#6855), so reachability is proven from a real client:
+      # the backend container requests the heartbeat over the compose network.
+      - name: Prove Chroma serves the heartbeat
+        run: |
+          docker compose exec -T backend python - <<'PY'
+          import urllib.request
+
+          with urllib.request.urlopen("http://chroma:8000/api/v2/heartbeat", timeout=5) as r:
+              assert r.status == 200, f"chroma heartbeat returned {r.status}"
+          print("chroma heartbeat: 200")
+          PY
+
       - name: Assert /health returns 200
         run: |
           code=$(curl -fsS -o /dev/null -w '%{http_code}' http://localhost:8000/health)
