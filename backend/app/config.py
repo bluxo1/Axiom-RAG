@@ -208,6 +208,9 @@ class FallbackSection(StrictModel):
     provider: Literal["tavily", "brave"]
     max_results: PositiveInt
     timeout_seconds: PositiveFloat
+    # Rule 8 spend accounting: web search is billed per call, not per token, so
+    # the guard records this flat estimate against the monthly USD cap.
+    price_per_search_usd: NonNegativeFloat
 
 
 class BudgetSection(StrictModel):

@@ -47,13 +47,13 @@
 
 ## Phase 3 - Confidence & Fallback (Week 3)
 
-- [ ] Hybrid confidence scorer (retrieval + faithfulness + coverage)
-- [ ] Threshold router: answer / flag / fallback
-- [ ] Tavily/Brave fallback with live-source citations
-- [ ] UI badges (green/yellow/blue) + warning copy
-- [ ] Streaming: `status` event immediately, then verified answer tokens (first verified token < 3s)
-- [ ] Logging of all scores + routing decisions to Postgres
-- [ ] pytest: mock weak retrieval -> answer is flagged or falls back, never confident
+- [x] Hybrid confidence scorer (retrieval + faithfulness + coverage)
+- [x] Threshold router: answer / flag / fallback
+- [x] Tavily/Brave fallback with live-source citations
+- [x] UI badges (green/yellow/blue) + warning copy
+- [x] Streaming: `status` event immediately, then verified answer tokens (first verified token < 3s)
+- [x] Logging of all scores + routing decisions to Postgres
+- [x] pytest: mock weak retrieval -> answer is flagged or falls back, never confident
 
 **Exit:** A demo question *outside* the corpus gets flagged or web-answered - never hallucinated.
 

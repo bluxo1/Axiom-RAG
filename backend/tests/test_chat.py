@@ -19,6 +19,7 @@ from app.db.session import Database
 from app.llm.embeddings import HashingEmbedder
 from app.llm.provider import INSUFFICIENT_EVIDENCE_JSON, LLMProvider, ScriptedLLM
 from app.main import create_app
+from app.search.provider import ScriptedWebSearch, WebResult, WebSearchProvider
 from app.services.runtime import Runtime
 from app.vector.store import InMemoryVectorStore
 from tests.helpers import TEST_DATABASE_URL, structured_answer
@@ -44,7 +45,9 @@ class EchoingLLM:
 
 
 @contextmanager
-def _chat_client(config: AxiomConfig, llm: LLMProvider) -> Iterator[TestClient]:
+def _chat_client(
+    config: AxiomConfig, llm: LLMProvider, *, web_search: WebSearchProvider | None = None
+) -> Iterator[TestClient]:
     database = Database(TEST_DATABASE_URL)
     database.create_all()
     runtime = Runtime(
@@ -53,6 +56,9 @@ def _chat_client(config: AxiomConfig, llm: LLMProvider) -> Iterator[TestClient]:
         embedder=HashingEmbedder(),
         llm=llm,
         vector_store=InMemoryVectorStore(),
+        # Default: a web search that returns nothing, so a fallback attempt
+        # fails and the honest refusal card is what the user sees.
+        web_search=web_search if web_search is not None else ScriptedWebSearch(),
     )
     try:
         with TestClient(create_app(config, runtime=runtime)) as client:
@@ -164,7 +170,11 @@ def test_missing_question_is_a_validation_error(config: AxiomConfig, question: s
     assert response.json()["error"]["code"] == "VALIDATION_ERROR"
 
 
-# ── Phase 2: citation grounding is a hard gate at the API boundary ────────────
+# ── Citation grounding is a hard gate at the API boundary (Phase 2) ───────────
+# On *every* path — corpus or web fallback — a fabricated chunk_id can never
+# reach the final answer or citations. When nothing grounds and fallback also
+# fails, the honest insufficient_evidence refusal is returned (Phase 3 contract:
+# Design.md §5, Architecture.md §3.5).
 
 _FABRICATED = "f" * 40  # a well-formed but never-retrieved chunk_id
 
@@ -261,6 +271,85 @@ def test_regeneration_recovers_when_second_attempt_is_grounded(config: AxiomConf
     assert llm.calls == 2
     assert payload["insufficient_evidence"] is False
     assert payload["citations"][0]["id"] == "c1"
+
+
+# ── Web fallback (Phase 3): the hard gate holds on the web path too ───────────
+# When the corpus cannot ground an answer, live web results re-enter the same
+# generation → grounding → confidence path (Architecture.md §3.6). A fabricated
+# citation is still impossible; a grounded web answer is labelled source="web".
+
+# Web context entries render as "[web#N] (title)\n<content>" (build_context).
+_WEB_ENTRY = re.compile(r"\[(web#\d+)\] \([^)]*\)\n(.+?)(?=\n\n\[|\Z)", re.DOTALL)
+
+
+class _KbRefusesThenWeb:
+    """Refuses on corpus context (forcing fallback); on web context, echoes the
+    first web chunk's text back as a grounded claim citing that web id.
+
+    `build` transforms the (web_id, web_text) it would otherwise cite, so a test
+    can inject a fabricated id and prove the gate still catches it on the web path.
+    """
+
+    def __init__(self, build: Callable[[str, str], str] | None = None) -> None:
+        self._build = build or (lambda web_id, web_text: structured_answer([(web_text, [web_id])]))
+        self.calls = 0
+
+    def complete_structured(self, *, system_prompt: str, user_prompt: str) -> str:
+        self.calls += 1
+        web = _WEB_ENTRY.search(system_prompt)
+        if web is None:  # corpus context -> refuse so the fallback fires.
+            return INSUFFICIENT_EVIDENCE_JSON
+        return self._build(web.group(1), web.group(2).strip())
+
+
+def _web_result() -> WebResult:
+    return WebResult(
+        title="Encyclopaedia entry",
+        url="https://example.com/flooding",
+        content="The policy covers water damage and flooding events.",
+        relevance=0.9,
+    )
+
+
+def test_web_fallback_answers_from_live_sources_when_corpus_cannot(config: AxiomConfig) -> None:
+    llm = _KbRefusesThenWeb()
+    with _chat_client(config, llm, web_search=ScriptedWebSearch([_web_result()])) as client:
+        _ingest(client, b"Unrelated content about gardening tools.")
+        payload = client.post(CHAT, json={"question": "Does the policy cover flooding?"}).json()
+
+    assert payload["insufficient_evidence"] is False
+    assert payload["fallback_used"] is True
+    assert payload["confidence"]["level"] == "web"
+    assert payload["warning"]  # a visible "answered via web" note (Rule 5).
+    citation = payload["citations"][0]
+    assert citation["source"] == "web"
+    assert citation["url"] == "https://example.com/flooding"
+
+
+def test_web_fallback_search_is_attempted_only_after_corpus_fails(config: AxiomConfig) -> None:
+    search = ScriptedWebSearch([_web_result()])
+    with _chat_client(config, _KbRefusesThenWeb(), web_search=search) as client:
+        _ingest(client, b"Unrelated content about gardening tools.")
+        client.post(CHAT, json={"question": "Does the policy cover flooding?"})
+
+    assert search.calls == ["Does the policy cover flooding?"]  # fired exactly once.
+
+
+def test_fabricated_citation_never_reaches_response_on_the_web_path(config: AxiomConfig) -> None:
+    # Web search returns a real hit, but the model cites a fabricated id against
+    # it: grounding fails on the web path, fallback yields nothing, honest refusal.
+    def fabricate(_web_id: str, _web_text: str) -> str:
+        return structured_answer([("Fake.", [_FABRICATED])])
+
+    llm = _KbRefusesThenWeb(fabricate)
+    with _chat_client(config, llm, web_search=ScriptedWebSearch([_web_result()])) as client:
+        _ingest(client, b"Unrelated content about gardening tools.")
+        payload = client.post(CHAT, json={"question": "Does the policy cover flooding?"}).json()
+
+    assert payload["insufficient_evidence"] is True
+    assert payload["citations"] == []
+    assert payload["fallback_used"] is False
+    assert _FABRICATED not in payload["answer"]
 
 
 def test_malformed_json_is_repaired_once_then_502(config: AxiomConfig) -> None:

@@ -22,8 +22,9 @@ from app.core.budget import BudgetGuard
 from app.core.errors import AxiomError, ErrorCode
 from app.db.session import Database
 from app.llm.embeddings import Embedder, OpenAIEmbedder
-from app.llm.guarded import GuardedEmbedder, GuardedLLM
+from app.llm.guarded import GuardedEmbedder, GuardedLLM, GuardedWebSearch
 from app.llm.provider import LLMProvider, OpenAILLM
+from app.search.provider import BraveWebSearch, TavilyWebSearch, WebSearchProvider
 from app.vector.store import ChromaVectorStore, VectorStore
 
 
@@ -46,6 +47,7 @@ class Runtime:
         embedder: Embedder | None = None,
         llm: LLMProvider | None = None,
         vector_store: VectorStore | None = None,
+        web_search: WebSearchProvider | None = None,
     ) -> None:
         self.config = config
         self.db = database
@@ -60,6 +62,16 @@ class Runtime:
             GuardedLLM(llm, self.budget, model=config.generation.model) if llm else None
         )
         self._vector_store = vector_store
+        self._web_search: WebSearchProvider | None = (
+            GuardedWebSearch(
+                web_search,
+                self.budget,
+                provider=config.fallback.provider,
+                price_usd=config.fallback.price_per_search_usd,
+            )
+            if web_search is not None
+            else None
+        )
 
     @property
     def embedder(self) -> Embedder:
@@ -78,6 +90,12 @@ class Runtime:
         if self._vector_store is None:
             self._vector_store = self._build_vector_store()
         return self._vector_store
+
+    @property
+    def web_search(self) -> WebSearchProvider:
+        if self._web_search is None:
+            self._web_search = self._build_web_search()
+        return self._web_search
 
     def _build_embedder(self) -> Embedder:
         section = self.config.embedding
@@ -132,4 +150,28 @@ class Runtime:
                 raise _unavailable(f"vector store is unreachable: {exc}") from exc
         raise _unavailable(
             f"vector backend '{self.config.vector_store.backend}' has no Phase 1 implementation."
+        )
+
+    def _build_web_search(self) -> WebSearchProvider:
+        section = self.config.fallback
+        settings = self.config.settings
+        if section.provider == "tavily":
+            if settings.tavily_api_key is None:
+                raise _unavailable("Tavily API key is not configured (set TAVILY_API_KEY).")
+            inner: WebSearchProvider = TavilyWebSearch(
+                api_key=settings.tavily_api_key.get_secret_value(),
+                timeout_seconds=section.timeout_seconds,
+            )
+        else:
+            if settings.brave_api_key is None:
+                raise _unavailable("Brave API key is not configured (set BRAVE_API_KEY).")
+            inner = BraveWebSearch(
+                api_key=settings.brave_api_key.get_secret_value(),
+                timeout_seconds=section.timeout_seconds,
+            )
+        return GuardedWebSearch(
+            inner,
+            self.budget,
+            provider=section.provider,
+            price_usd=section.price_per_search_usd,
         )
