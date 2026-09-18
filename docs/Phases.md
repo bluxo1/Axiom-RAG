@@ -35,11 +35,11 @@
 
 ## Phase 2 - Citation Grounding (Week 2) - core differentiator
 
-- [ ] Structured output: answer + claims + citations
-- [ ] Citation verifier: chunk_id existence + support checks
-- [ ] Verify -> regenerate loop (max 1 retry), reject on repeat failure
-- [ ] Citation cards in UI (quote, doc, page)
-- [ ] pytest: verifier rejects fabricated chunk_ids 100% of the time
+- [x] Structured output: answer + claims + citations
+- [x] Citation verifier: chunk_id existence + support checks
+- [x] Verify -> regenerate loop (max 1 retry), reject on repeat failure
+- [x] Citation cards in UI (quote, doc, page)
+- [x] pytest: verifier rejects fabricated chunk_ids 100% of the time
 
 **Exit:** Every displayed claim has a real, clickable citation; fabricated citations can never reach the UI (proven by tests).
 
