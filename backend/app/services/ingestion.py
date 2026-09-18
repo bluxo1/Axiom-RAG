@@ -15,7 +15,7 @@ from uuid import uuid4
 
 from app.db.models import Chunk, Document
 from app.rag.chunking import chunk_document, make_token_splitter
-from app.rag.parsing import parse_upload, parse_url
+from app.rag.parsing import enforce_upload_limit, parse_upload, parse_url
 from app.rag.types import ParsedDocument, TextChunk
 from app.services.runtime import Runtime
 
@@ -33,7 +33,8 @@ class IngestResult:
 
 
 def ingest_upload(runtime: Runtime, *, name: str, data: bytes) -> IngestResult:
-    """Ingest an uploaded file (PDF/TXT/MD)."""
+    """Ingest an uploaded file (PDF/TXT/MD), size-capped (PRD.md §8)."""
+    enforce_upload_limit(data, max_upload_mb=runtime.config.ingestion.max_upload_mb)
     return _ingest(runtime, parse_upload(name, data))
 
 

@@ -5,12 +5,16 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import APIRouter, File, UploadFile
-from starlette.status import HTTP_400_BAD_REQUEST, HTTP_404_NOT_FOUND
+from starlette.status import (
+    HTTP_400_BAD_REQUEST,
+    HTTP_404_NOT_FOUND,
+    HTTP_413_CONTENT_TOO_LARGE,
+)
 
 from app.api.deps import RuntimeDep
 from app.api.v1.schemas import DocumentList, DocumentSummary, UrlIngestRequest
 from app.core.errors import AxiomError, ErrorCode
-from app.rag.parsing import ParsingError
+from app.rag.parsing import ParsingError, UploadTooLargeError
 from app.services.documents import delete_document, list_documents
 from app.services.ingestion import IngestResult, ingest_from_url, ingest_upload
 
@@ -27,11 +31,17 @@ def _bad_request(exc: ParsingError) -> AxiomError:
     return AxiomError(ErrorCode.VALIDATION_ERROR, str(exc), status_code=HTTP_400_BAD_REQUEST)
 
 
+def _too_large(exc: UploadTooLargeError) -> AxiomError:
+    return AxiomError(ErrorCode.VALIDATION_ERROR, str(exc), status_code=HTTP_413_CONTENT_TOO_LARGE)
+
+
 @router.post("", response_model=DocumentSummary, summary="Upload a document (PDF/TXT/MD)")
 def upload_document(runtime: RuntimeDep, file: Annotated[UploadFile, File()]) -> DocumentSummary:
     data = file.file.read()
     try:
         result = ingest_upload(runtime, name=file.filename or "upload", data=data)
+    except UploadTooLargeError as exc:
+        raise _too_large(exc) from exc
     except ParsingError as exc:
         raise _bad_request(exc) from exc
     return _summary(result)
