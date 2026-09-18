@@ -7,6 +7,10 @@ another app.
 
 from __future__ import annotations
 
+import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -17,6 +21,10 @@ from app.config import AxiomConfig, get_config
 from app.core.errors import register_exception_handlers
 from app.core.logging_setup import configure_logging
 from app.core.rate_limit import RateLimitMiddleware, TokenBucketLimiter
+from app.db.session import Database
+from app.services.runtime import Runtime
+
+logger = logging.getLogger(__name__)
 
 DESCRIPTION = """\
 Citation-grounded RAG agent. Start from what you can prove.
@@ -27,10 +35,36 @@ instead of guessing.
 """
 
 
-def create_app(config: AxiomConfig | None = None) -> FastAPI:
-    """Build the application. Pass `config` to override the process default."""
+def create_app(config: AxiomConfig | None = None, runtime: Runtime | None = None) -> FastAPI:
+    """Build the application.
+
+    Pass `config` to override the process default; pass `runtime` to inject a
+    database and fake providers (tests do this). Otherwise a `Runtime` is built
+    from config with a lazily-connecting database and the configured providers.
+    """
     config = config if config is not None else get_config()
     configure_logging(config.settings.log_level)
+
+    # Whoever creates the database disposes it: when the caller injects a
+    # runtime (tests), they own its lifecycle; when we build one, we do.
+    owns_database = runtime is None
+    if runtime is None:
+        runtime = Runtime(config, Database(config.settings.database_url))
+    active_runtime = runtime
+
+    @asynccontextmanager
+    async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        # Create tables on startup. A schema tool (Alembic) replaces this once a
+        # migration must run against a database holding real data. Kept
+        # non-fatal so liveness still answers when the database is down — the
+        # first /documents or /chat call then returns a clear error.
+        try:
+            active_runtime.db.create_all()
+        except Exception:
+            logger.exception("could not initialize the database schema at startup")
+        yield
+        if owns_database:
+            active_runtime.db.dispose()
 
     app = FastAPI(
         title=config.app.name,
@@ -39,8 +73,10 @@ def create_app(config: AxiomConfig | None = None) -> FastAPI:
         openapi_url="/openapi.json",
         docs_url="/docs",
         redoc_url=None,
+        lifespan=lifespan,
     )
     app.state.config = config
+    app.state.runtime = runtime
 
     register_exception_handlers(app)
 

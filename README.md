@@ -84,11 +84,32 @@ pnpm run dev        # http://localhost:5173
 - Budget caps (`MAX_REQUEST_TOKENS`, `DAILY_TOKEN_CAP`, `MONTHLY_SPEND_USD`) set
   in `.env` override the `budget.*` defaults in `config.yaml`.
 
+## API (v1)
+
+Base URL `/api/v1`. Ingestion, retrieval, and chat need an `OPENAI_API_KEY`
+(embeddings + generation); without one they return a structured `503`.
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `POST` | `/documents` | Upload a PDF/TXT/MD file |
+| `POST` | `/documents/url` | Ingest a URL's main content |
+| `GET` | `/documents` | List ingested documents |
+| `DELETE` | `/documents/{doc_id}` | Delete a document and its chunks |
+| `POST` | `/search` | Top-k semantic search |
+| `POST` | `/chat` | Ask a grounded question |
+| `GET` | `/sessions/{id}` | Chat history for a session |
+| `GET` | `/health` | Liveness |
+
 ## Repository layout
 
 ```
-backend/    FastAPI app, config loader, structured errors, rate limiting, tests
-frontend/   React 18 + Vite 5 + Tailwind 3 (pinned), health-check shell
+backend/    FastAPI app: config, errors, rate limiting, DB, RAG pipeline, tests
+  app/rag/       parsing, chunking, prompts, citations (pure)
+  app/llm/       embedding + LLM providers behind interfaces
+  app/vector/    vector store interface (Chroma / in-memory)
+  app/db/        SQLAlchemy models + session
+  app/services/  ingestion, retrieval, chat, sessions (side effects)
+frontend/   React 18 + Vite 5 + Tailwind 3 (pinned): upload box + chat thread
 data/        Ingested corpora and the local vector store (gitignored, disposable)
 evals/       Golden set and RAGAS reports (Phase 4)
 docs/        Spec: PRD, Architecture, Design, Rules, Phases, ADRs
@@ -96,8 +117,8 @@ docs/        Spec: PRD, Architecture, Design, Rules, Phases, ADRs
 
 ## Status
 
-**Phase 0 (Setup & Skeleton) — complete.** Repo skeleton, docker-compose stack,
-CI (ruff + mypy + pytest, frontend build, compose health check), config loader,
-`config.yaml`, rate-limit middleware, and the pinned frontend toolchain are in
-place. Next: Phase 1 (core RAG — ingestion, retrieval, chat). See
-[docs/Phases.md](docs/Phases.md).
+**Phase 1 (Core RAG) — complete.** Ingestion (parse → chunk → embed → store),
+top-k retrieval, a grounded chat endpoint, Postgres persistence with chat
+history, and a minimal chat UI are in place on top of the Phase 0 skeleton.
+Grounding is **not yet verified** — the citation verifier, confidence scoring,
+and web fallback arrive in Phases 2-3. See [docs/Phases.md](docs/Phases.md).

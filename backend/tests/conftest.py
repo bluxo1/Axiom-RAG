@@ -14,7 +14,8 @@ from fastapi.testclient import TestClient
 
 from app.config import AxiomConfig, Knobs, Settings, load_knobs
 from app.main import create_app
-from tests.helpers import BACKEND_ENV_VARS, CONFIG_PATH, read_raw_config
+from app.services.runtime import Runtime
+from tests.helpers import BACKEND_ENV_VARS, CONFIG_PATH, make_runtime, read_raw_config
 
 
 @pytest.fixture(autouse=True)
@@ -41,6 +42,19 @@ def config(knobs: Knobs) -> AxiomConfig:
 
 
 @pytest.fixture
-def client(config: AxiomConfig) -> Iterator[TestClient]:
-    with TestClient(create_app(config)) as test_client:
+def runtime(config: AxiomConfig) -> Iterator[Runtime]:
+    """An offline runtime (SQLite + fake providers) for endpoint tests.
+
+    Disposed after the test so the in-memory SQLite connection is closed rather
+    than reclaimed by the garbage collector — an unclosed connection raises a
+    ResourceWarning that `filterwarnings = ["error"]` would turn into a failure.
+    """
+    built = make_runtime(config)
+    yield built
+    built.db.dispose()
+
+
+@pytest.fixture
+def client(config: AxiomConfig, runtime: Runtime) -> Iterator[TestClient]:
+    with TestClient(create_app(config, runtime=runtime)) as test_client:
         yield test_client

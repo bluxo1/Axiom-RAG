@@ -15,15 +15,16 @@ from fastapi.testclient import TestClient
 from app.config import AxiomConfig
 from app.core.errors import AxiomError, ErrorCode, ErrorResponse
 from app.main import create_app
+from app.services.runtime import Runtime
 
 BOOM = "/api/v1/_boom"
 TEAPOT = "/api/v1/_teapot"
 
 
 @pytest.fixture
-def faulty_app(config: AxiomConfig) -> FastAPI:
+def faulty_app(config: AxiomConfig, runtime: Runtime) -> FastAPI:
     """An app with routes that fail on purpose."""
-    app = create_app(config)
+    app = create_app(config, runtime=runtime)
 
     @app.get(BOOM)
     def boom() -> None:

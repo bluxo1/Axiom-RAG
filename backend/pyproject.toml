@@ -14,6 +14,20 @@ dependencies = [
   "pydantic>=2.9,<3.0",
   "pydantic-settings>=2.5,<3.0",
   "PyYAML>=6.0,<7.0",
+  "python-multipart>=0.0.18,<1.0",       # multipart upload parsing (POST /documents)
+  # ─── Persistence (Design.md §2.2) ───────────────────────────────────────────
+  "SQLAlchemy>=2.0,<3.0",
+  "psycopg[binary]>=3.2,<4.0",           # DATABASE_URL uses postgresql+psycopg://
+  # ─── RAG glue (Architecture.md §5: LlamaIndex for ingestion + retrieval) ─────
+  "llama-index-core>=0.14,<0.15",
+  "llama-index-embeddings-openai>=0.7,<0.8",
+  "llama-index-llms-openai>=0.8,<0.9",
+  "llama-index-vector-stores-chroma>=0.6,<0.7",
+  "chromadb>=1.5,<2.0",                  # client; server pinned in docker-compose
+  "tiktoken>=0.8,<1.0",                  # token-based chunking (512/64)
+  # ─── Parsing (Architecture.md §3.1) ─────────────────────────────────────────
+  "pypdf>=5.1,<7.0",                     # PDF text extraction
+  "trafilatura>=2.0,<3.0",               # URL main-content extraction
 ]
 
 [project.optional-dependencies]
@@ -61,9 +75,9 @@ select = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-# Fixtures and helpers may shadow module names; request objects go unused in
-# handlers that the framework still requires them for.
-"tests/*" = ["ARG001"]
+# ARG001/ARG002: fixtures and provider test doubles take arguments they don't
+# use (a framework passes them, or a Protocol requires the signature).
+"tests/*" = ["ARG001", "ARG002"]
 
 [tool.ruff.lint.flake8-tidy-imports]
 ban-relative-imports = "parents"
@@ -81,6 +95,23 @@ plugins = ["pydantic.mypy"]
 init_forbid_extra = true
 init_typed = true
 warn_required_dynamic_aliases = true
+
+# Third-party libraries without usable type information for a 3.11 target.
+# `follow_imports = "skip"` stops mypy analyzing their internals — notably
+# numpy (pulled in by chromadb), whose 3.12-only `type` statements in its stubs
+# fail to parse under python_version 3.11. Our own code stays fully strict.
+[[tool.mypy.overrides]]
+module = [
+  "llama_index.*",
+  "chromadb",
+  "trafilatura",
+  "pypdf",
+  "pypdf.*",
+  "numpy",
+]
+follow_imports = "skip"
+follow_imports_for_stubs = true
+ignore_missing_imports = true
 
 # ─── Tests ────────────────────────────────────────────────────────────────────
 [tool.pytest.ini_options]
