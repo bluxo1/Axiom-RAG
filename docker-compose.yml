@@ -33,7 +33,7 @@ services:
 
   chroma:
     # Pinned: ADR-0002 dev vector store. Keep the Python client major in sync
-    # when Phase 1 adds it. This image ships curl, so the probe below is safe.
+    # when Phase 1 adds it.
     image: chromadb/chroma:1.5.9
     restart: unless-stopped
     environment:
@@ -44,12 +44,12 @@ services:
       - "${CHROMA_PORT:-8001}:8000"
     volumes:
       - chromadata:/chroma/chroma
-    healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/v2/heartbeat"]
-      interval: 5s
-      timeout: 5s
-      retries: 24
-      start_period: 10s
+    # No container healthcheck: published chroma images >= 1.5.7 ship without
+    # curl (chroma-core/chroma#6855), so a curl probe can never pass and the
+    # container is declared unhealthy forever. Reachability is proven
+    # end-to-end instead: the CI compose job requests the heartbeat from inside
+    # the backend container after `--wait`, which is stronger proof than a
+    # self-probe anyway.
 
   backend:
     build:
@@ -74,8 +74,10 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      # Started, not healthy: chroma has no healthcheck (see above). Backend
+      # liveness is deliberately datastore-free (app/api/v1/health.py).
       chroma:
-        condition: service_healthy
+        condition: service_started
     healthcheck:
       test:
         - CMD
