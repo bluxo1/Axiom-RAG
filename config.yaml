@@ -1,0 +1,124 @@
+# Axiom — runtime configuration
+#
+# Every tunable knob lives here, never in code (Rules.md §2, Prompt.md §PROCESS).
+# Secrets and deployment-specific endpoints live in `.env` only (see `.env.example`).
+#
+# Each value below cites the doc that fixes it. Changing a cited value is a spec
+# change: update the doc in the same commit.
+
+app:
+  name: Axiom
+  # Design.md §1 — all versioned endpoints live under this prefix.
+  api_prefix: /api/v1
+  # Origins allowed to call the API from a browser (dev frontend default).
+  cors_origins:
+    - http://localhost:5173
+    - http://127.0.0.1:5173
+
+# ─── Ingestion ────────────────────────────────────────────────────────────────
+# Architecture.md §3.1, Prompt.md §PIPELINE 1 — recursive splitting, 512/64.
+chunking:
+  size_tokens: 512
+  overlap_tokens: 64
+
+# ADR-0001 — the active embedding model is declared once, here, never hardcoded.
+# Switching it requires full re-ingestion; collections are namespaced per model
+# so incompatible vectors can never mix.
+embedding:
+  provider: openai # openai | sentence-transformers
+  model: text-embedding-3-small
+  dimensions: 1536
+  batch_size: 64
+
+# ADR-0002 — backend is a config change, not a code change. Cosine is pinned so
+# dev (Chroma) and prod (pgvector) score identically.
+vector_store:
+  backend: chroma # chroma | pgvector
+  similarity: cosine
+  # Effective collection name is "{collection_prefix}_{embedding-model-slug}"
+  # (ADR-0001 §Decision 2).
+  collection_prefix: chunks
+
+# ─── Retrieval ────────────────────────────────────────────────────────────────
+# Architecture.md §3.2 — top-k semantic search, k=8.
+retrieval:
+  top_k: 8
+
+# ─── Generation ───────────────────────────────────────────────────────────────
+# Architecture.md §3.3, Design.md §3. Provider is swappable behind
+# `llm/provider.py` (Rules.md §2).
+generation:
+  provider: openai # openai | groq
+  model: gpt-4o-mini
+  temperature: 0.0
+  timeout_seconds: 30
+  # Design.md §5 — malformed LLM JSON gets one auto-repair pass, then 502.
+  max_repair_attempts: 1
+  # Design.md §5 — LLM timeout retries once, then 504.
+  max_timeout_retries: 1
+
+# ─── Grounding (hard gate) ────────────────────────────────────────────────────
+# Architecture.md §3.4 — verification runs before confidence routing on every
+# path. Failures regenerate at most once, then the answer is flagged.
+grounding:
+  max_regenerations: 1
+  # Cheap support check: fraction of claim keywords that must appear in the
+  # cited chunk for the citation to count as supporting.
+  support_keyword_overlap_min: 0.3
+
+# ─── Confidence ───────────────────────────────────────────────────────────────
+# Architecture.md §3.5 — confidence = w1*retrieval + w2*faithfulness + w3*coverage.
+# Weights must sum to 1.0 (asserted at load). Starting values are untuned;
+# Phase 4 tunes them on the golden set and records before/after numbers.
+confidence:
+  weights:
+    retrieval: 0.30
+    faithfulness: 0.40
+    coverage: 0.30
+  # Routing thresholds (Architecture.md §3.5, Phases.md Phase 0):
+  #   score >= high        -> answer
+  #   low <= score < high  -> answer + low-confidence badge (flagged)
+  #   score <  low         -> web-search fallback
+  thresholds:
+    high: 0.75
+    low: 0.45
+
+# ─── Fallback ─────────────────────────────────────────────────────────────────
+# Architecture.md §3.6 — web results re-enter generation → grounding → routing.
+fallback:
+  enabled: true
+  provider: tavily # tavily | brave
+  max_results: 5
+  timeout_seconds: 10
+
+# ─── Budget guard (Prompt.md Rule 8, Design.md §6) ────────────────────────────
+# Every LLM/embedding/search call passes the guard. Exceeding a cap returns
+# 429 BUDGET_EXCEEDED — never a silent surprise bill. These are the defaults;
+# MAX_REQUEST_TOKENS / DAILY_TOKEN_CAP / MONTHLY_SPEND_USD in `.env` override them.
+budget:
+  max_request_tokens: 8000
+  daily_token_cap: 200000
+  monthly_spend_usd: 10.0
+
+# ─── Rate limiting (PRD.md §8 security, Design.md §6) ─────────────────────────
+# Per-session token bucket; dev is generous, prod is tightened in the Phase 4
+# hardening sweep. Identity is the X-Session-Id header, falling back to client IP.
+rate_limit:
+  enabled: true
+  capacity: 30 # burst: requests available at once
+  refill_per_second: 1.0 # sustained rate
+  # Liveness probes must never be rate limited — orchestrators depend on them.
+  exempt_paths:
+    - /health
+    - /api/v1/health
+  # Upper bound on tracked identities; the idlest buckets are evicted first.
+  max_tracked_identities: 10000
+
+# ─── Answer cache (Design.md §6) ──────────────────────────────────────────────
+# Keyed by (question_hash, doc_set_hash) to avoid repeat spend. doc_set_hash is
+# sha1 over the sorted (doc_id, status) pairs of the ingested corpus, so any
+# ingest or delete invalidates it.
+cache:
+  enabled: true
+  ttl_seconds: 3600
+  max_entries: 500

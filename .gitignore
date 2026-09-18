@@ -1,0 +1,43 @@
+# ─── Secrets ──────────────────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+
+# ─── Python ───────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# ─── Node / frontend ──────────────────────────────────────────────────────────
+node_modules/
+frontend/dist/
+.pnpm-store/
+*.tsbuildinfo
+
+# ─── Local scratch (offline package caches used to build the lockfile) ────────
+.tmp-npm-cache/
+.tmp-pnpm-store/
+
+# ─── Local data (ingested corpora and vector store are disposable, ADR-0002) ──
+data/*
+!data/.gitkeep
+
+# ─── Eval output ──────────────────────────────────────────────────────────────
+evals/reports/*
+!evals/reports/.gitkeep
+
+# ─── Editors / OS ─────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

@@ -1,0 +1,94 @@
+# Axiom — local development stack (Phases.md Phase 0)
+#
+# Boots FastAPI + Postgres + Chroma. The frontend runs outside compose via
+# `pnpm dev` (Phases.md scopes compose to these three services).
+#
+#   cp .env.example .env
+#   docker compose up --build
+#   curl http://localhost:8000/health   -> 200
+#
+# `docker compose up --wait` blocks until every service reports healthy.
+
+name: axiom
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-axiom}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-axiom}
+      POSTGRES_DB: ${POSTGRES_DB:-axiom}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-axiom} -d ${POSTGRES_DB:-axiom}"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 5s
+
+  chroma:
+    # Pinned: ADR-0002 dev vector store. Keep the Python client major in sync
+    # when Phase 1 adds it. This image ships curl, so the probe below is safe.
+    image: chromadb/chroma:1.5.9
+    restart: unless-stopped
+    environment:
+      IS_PERSISTENT: "TRUE"
+      ANONYMIZED_TELEMETRY: "FALSE"
+    ports:
+      # Host 8001 to leave 8000 for the backend.
+      - "${CHROMA_PORT:-8001}:8000"
+    volumes:
+      - chromadata:/chroma/chroma
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/v2/heartbeat"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 10s
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    # Secrets and per-developer overrides. Run `cp .env.example .env` first.
+    env_file:
+      - .env
+    environment:
+      # Service-network addresses override whatever .env holds for the host shell.
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-axiom}:${POSTGRES_PASSWORD:-axiom}@postgres:5432/${POSTGRES_DB:-axiom}
+      CHROMA_HOST: chroma
+      CHROMA_PORT: "8000"
+      CONFIG_PATH: /srv/axiom/config.yaml
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    volumes:
+      # Read-only so a container can never rewrite the committed knobs.
+      - ./config.yaml:/srv/axiom/config.yaml:ro
+      - ./data:/srv/axiom/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      chroma:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - |
+          import sys, urllib.request
+          sys.exit(0 if urllib.request.urlopen("http://localhost:8000/health", timeout=5).status == 200 else 1)
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 5s
+
+volumes:
+  pgdata:
+  chromadata:
