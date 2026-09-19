@@ -79,8 +79,10 @@ grounding:
 
 # ─── Confidence ───────────────────────────────────────────────────────────────
 # Architecture.md §3.5 — confidence = w1*retrieval + w2*faithfulness + w3*coverage.
-# Weights must sum to 1.0 (asserted at load). Starting values are untuned;
-# Phase 4 tunes them on the golden set and records before/after numbers.
+# Weights must sum to 1.0 (asserted at load). Phase 4 tuned the thresholds below
+# on the golden set (backend/evals/reports/threshold-tuning.md): the in-corpus
+# score floor is 0.905, and high=0.75 sits a 0.15 noise buffer beneath it — the
+# sweep confirmed these defaults (100% in-corpus recall, zero escapes).
 confidence:
   weights:
     retrieval: 0.30

@@ -1,0 +1,39 @@
+# Build context is the repo root (backend/Dockerfile bakes config.yaml), so the
+# context must be trimmed to what the backend image actually installs:
+# backend/pyproject.toml, backend/app, and config.yaml. Everything else is noise.
+
+# VCS, envs, editor
+.git/
+.github/
+.venv/
+venv/
+.tmp-npm-cache/
+.tmp-pnpm-store/
+.freebuff/
+
+# Frontend (deploys to Vercel, never into the backend image)
+frontend/
+
+# Docs, specs, evals, ingested data, local vector store
+docs/
+data/
+backend/evals/
+backend/tests/
+
+# Python build/test caches
+**/__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# The Dockerfile itself and env files never belong in the image
+backend/Dockerfile
+.dockerignore
+.env
+.env.*

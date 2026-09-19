@@ -1,0 +1,84 @@
+# Axiom — Render Blueprint (Phases.md Phase 4 deploy).
+#
+# Provisions the backend (Docker web service) and the vector store (ChromaDB
+# private service). Postgres is Neon (external, set DATABASE_URL by hand); the
+# frontend is Vercel (see frontend/vercel.json). Full walkthrough:
+# docs/DEPLOY_RUNBOOK.md.
+#
+# NOTE (drift from Architecture.md §5 / ADR-0002): prod is specified to use
+# pgvector, but only the Chroma backend is implemented today, so prod runs
+# Chroma as a private service. ADR-0002 makes the backend a config change, so
+# when pgvector lands this service is dropped and DATABASE_URL is reused. Flagged
+# in DEPLOY_RUNBOOK.md and the phase report rather than silently improvised.
+
+services:
+  # ─── Backend: FastAPI in the committed image ────────────────────────────────
+  - type: web
+    name: axiom-backend
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    # Repo root: the Dockerfile bakes config.yaml from here (see docker-compose).
+    dockerContext: .
+    # Bind to Render's injected $PORT rather than the image's default 8000.
+    dockerCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    plan: starter
+    # Liveness is dependency-free (app/api/v1/health.py) — safe as a health gate.
+    healthCheckPath: /health
+    # Deploy on demand from the runbook, not on every push.
+    autoDeploy: false
+    envVars:
+      - key: AXIOM_ENV
+        value: prod
+      - key: LOG_LEVEL
+        value: INFO
+      # Baked into the image at this path; kept explicit so nothing depends on cwd.
+      - key: CONFIG_PATH
+        value: /srv/axiom/config.yaml
+      # Behind Render's TLS, so emit HSTS (off in plain-HTTP dev).
+      - key: ENABLE_HSTS
+        value: "true"
+      # Secrets — set in the Render dashboard, never committed (sync: false).
+      # DATABASE_URL is the Neon connection string, rewritten to the SQLAlchemy
+      # dialect: postgresql+psycopg://USER:PASSWORD@HOST/DB?sslmode=require
+      - key: DATABASE_URL
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: TAVILY_API_KEY
+        sync: false
+      # Vector store: reach the Chroma private service over Render's network.
+      - key: CHROMA_HOST
+        fromService:
+          type: pserv
+          name: axiom-chroma
+          property: host
+      - key: CHROMA_PORT
+        fromService:
+          type: pserv
+          name: axiom-chroma
+          property: port
+      # Budget caps (Rule 8) — override config.yaml defaults. Tune per plan.
+      - key: MAX_REQUEST_TOKENS
+        value: "8000"
+      - key: DAILY_TOKEN_CAP
+        value: "200000"
+      - key: MONTHLY_SPEND_USD
+        value: "10.0"
+
+  # ─── Vector store: pinned ChromaDB (ADR-0002 dev backend, prod until pgvector)
+  - type: pserv
+    name: axiom-chroma
+    runtime: image
+    image:
+      url: chromadb/chroma:1.5.9
+    plan: starter
+    # Persist the collections across restarts/deploys.
+    disk:
+      name: chroma-data
+      mountPath: /chroma/chroma
+      sizeGB: 1
+    envVars:
+      - key: IS_PERSISTENT
+        value: "TRUE"
+      - key: ANONYMIZED_TELEMETRY
+        value: "FALSE"

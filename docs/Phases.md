@@ -8,14 +8,14 @@
 
 ## Phase 0 - Setup & Skeleton (2-3 days)
 
-- [ ] Repo structure (`backend/`, `frontend/`, `data/`, `evals/`)
-- [ ] Docker Compose: FastAPI + Postgres + Chroma
-- [ ] CI: lint (ruff), typecheck (mypy), tests on PR
-- [ ] Env config loader + `.env.example`
-- [ ] `config.yaml` scaffold with every documented knob (thresholds 0.75/0.45, confidence weights, k=8, chunk 512/64, budget caps) — nothing magic in code (Rules §2)
-- [ ] Rate-limit middleware + budget-guard env vars (PRD security NFR; Master-Prompt Rule 8)
-- [ ] Pinned frontend toolchain (React 18, Vite 5, Node 20, pnpm 9) asserted in CI
-- [ ] README quickstart
+- [x] Repo structure (`backend/`, `frontend/`, `data/`, `evals/`)
+- [x] Docker Compose: FastAPI + Postgres + Chroma
+- [x] CI: lint (ruff), typecheck (mypy), tests on PR
+- [x] Env config loader + `.env.example`
+- [x] `config.yaml` scaffold with every documented knob (thresholds 0.75/0.45, confidence weights, k=8, chunk 512/64, budget caps) — nothing magic in code (Rules §2)
+- [x] Rate-limit middleware + budget-guard env vars (PRD security NFR; Master-Prompt Rule 8)
+- [x] Pinned frontend toolchain (React 18, Vite 5, Node 20, pnpm 9) asserted in CI
+- [x] README quickstart
 
 **Exit:** `docker compose up` boots all services; `/health` returns 200.
 
@@ -23,11 +23,11 @@
 
 ## Phase 1 - Core RAG (Week 1)
 
-- [ ] Document ingestion: PDF/TXT/MD/URL parse -> chunk -> embed -> store (URL via trafilatura, PRD FR-1)
-- [ ] Retrieval endpoint: top-k semantic search
-- [ ] Basic chat endpoint: grounded prompt -> answer (no verification yet)
-- [ ] Postgres: documents + messages tables, chat history endpoint (`GET /sessions/{id}`)
-- [ ] Minimal chat UI: upload box + message thread
+- [x] Document ingestion: PDF/TXT/MD/URL parse -> chunk -> embed -> store (URL via trafilatura, PRD FR-1)
+- [x] Retrieval endpoint: top-k semantic search
+- [x] Basic chat endpoint: grounded prompt -> answer (no verification yet)
+- [x] Postgres: documents + messages tables, chat history endpoint (`GET /sessions/{id}`)
+- [x] Minimal chat UI: upload box + message thread
 
 **Exit:** Can upload 3 PDFs, ask questions, get sourced-looking answers end-to-end.
 
@@ -61,9 +61,9 @@
 
 ## Phase 4 - Evals, Polish, Deploy (Week 4)
 
-- [ ] Golden dataset: 30-50 Q&A pairs over test corpus (include adversarial/out-of-corpus questions)
-- [ ] RAGAS harness: faithfulness + answer relevancy + citation precision
-- [ ] Threshold tuning from eval results; record before/after numbers for README
+- [x] Golden dataset: 30-50 Q&A pairs over test corpus (include adversarial/out-of-corpus questions)
+- [x] RAGAS harness: faithfulness + answer relevancy + citation precision
+- [x] Threshold tuning from eval results; record before/after numbers for README
 - [ ] Latency validation under load (P95 < 15s full answer)
 - [ ] Rate limiting + error handling sweep
 - [ ] Dockerize, deploy (Render + Vercel + Neon)

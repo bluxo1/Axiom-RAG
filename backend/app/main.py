@@ -21,6 +21,7 @@ from app.config import AxiomConfig, get_config
 from app.core.errors import register_exception_handlers
 from app.core.logging_setup import configure_logging
 from app.core.rate_limit import RateLimitMiddleware, TokenBucketLimiter
+from app.core.security_headers import SecurityHeadersMiddleware
 from app.db.session import Database
 from app.services.runtime import Runtime
 
@@ -99,6 +100,12 @@ def create_app(config: AxiomConfig | None = None, runtime: Runtime | None = None
         allow_methods=["*"],
         allow_headers=["*"],
         expose_headers=["Retry-After", "X-RateLimit-Limit", "X-RateLimit-Remaining"],
+    )
+    # Added last => outermost => runs on every response (including 429s and CORS
+    # preflights), so the baseline security headers are always present.
+    app.add_middleware(
+        SecurityHeadersMiddleware,
+        enable_hsts=config.settings.enable_hsts,
     )
 
     app.include_router(api_router, prefix=config.app.api_prefix)

@@ -53,8 +53,10 @@ services:
 
   backend:
     build:
-      context: ./backend
-      dockerfile: Dockerfile
+      # Repo root so the image can bake config.yaml (Dockerfile). The read-only
+      # mount below still overrides it with the live file in dev.
+      context: .
+      dockerfile: backend/Dockerfile
     restart: unless-stopped
     # Secrets and per-developer overrides. Run `cp .env.example .env` first.
     env_file:

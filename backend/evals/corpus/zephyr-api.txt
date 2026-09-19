@@ -1,0 +1,18 @@
+Zephyr Payments API — Developer Guide
+
+The Zephyr API authenticates every request with a bearer token passed in the
+Authorization header. Tokens are issued from the developer dashboard and expire
+ninety days after creation. A request with an expired token returns a 401 status
+with the error code TOKEN_EXPIRED.
+
+Rate limiting allows one hundred requests per minute for each API token. When a
+client exceeds the limit, the API responds with a 429 status and a Retry-After
+header giving the number of seconds to wait.
+
+The charge endpoint accepts amounts in the smallest currency unit, so ten
+dollars is sent as the integer one thousand. Every successful charge returns a
+unique idempotency key that can be replayed safely to avoid duplicate billing.
+
+Refunds can be issued for up to one hundred eighty days after the original
+charge. A partial refund is allowed as long as the total refunded never exceeds
+the original charge amount.

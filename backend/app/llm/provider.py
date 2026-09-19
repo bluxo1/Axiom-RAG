@@ -22,6 +22,15 @@ INSUFFICIENT_EVIDENCE_JSON = (
 )
 
 
+class LLMTimeoutError(Exception):
+    """The LLM call exceeded its timeout.
+
+    A plain exception, not an `AxiomError`: providers stay free of HTTP concerns.
+    The chat service catches it, spends the configured retry budget, and only
+    then raises the 504 envelope (Design.md §5).
+    """
+
+
 @runtime_checkable
 class LLMProvider(Protocol):
     """A single grounded, structured-output completion call."""
@@ -75,13 +84,23 @@ class OpenAILLM:
         )
 
     def complete_structured(self, *, system_prompt: str, user_prompt: str) -> str:
+        import httpx
+        import openai
         from llama_index.core.llms import ChatMessage, MessageRole
 
-        response = self._client.chat(
-            [
-                ChatMessage(role=MessageRole.SYSTEM, content=system_prompt),
-                ChatMessage(role=MessageRole.USER, content=user_prompt),
-            ],
-            response_format={"type": "json_object"},
-        )
+        # The OpenAI SDK wraps an httpx read timeout in `openai.APITimeoutError`;
+        # a bare httpx/stdlib timeout can still surface if a lower layer raises.
+        timeouts = (openai.APITimeoutError, httpx.TimeoutException, TimeoutError)
+        try:
+            response = self._client.chat(
+                [
+                    ChatMessage(role=MessageRole.SYSTEM, content=system_prompt),
+                    ChatMessage(role=MessageRole.USER, content=user_prompt),
+                ],
+                response_format={"type": "json_object"},
+            )
+        except timeouts as exc:
+            # Design.md §5: a timeout is retryable; surface it as our own type so
+            # the chat service can retry once and then return a 504.
+            raise LLMTimeoutError(str(exc)) from exc
         return (response.message.content or "").strip()
