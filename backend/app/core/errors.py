@@ -56,6 +56,10 @@ class ErrorCode(StrEnum):
     # survived the repair pass) — a 502, the upstream failed us (Design.md §5,
     # Prompt.md API CONTRACT). Raised from the Phase 2 grounded-chat path.
     INVALID_LLM_RESPONSE = "INVALID_LLM_RESPONSE"
+    # The LLM call timed out and the retry budget (Design.md §5: retry once) is
+    # spent — a 504, distinct from a malformed response (502). Raised from the
+    # grounded-chat path.
+    LLM_TIMEOUT = "LLM_TIMEOUT"
     INTERNAL_ERROR = "INTERNAL_ERROR"
 
 

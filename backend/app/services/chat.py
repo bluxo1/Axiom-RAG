@@ -23,12 +23,17 @@ from __future__ import annotations
 import time
 from uuid import uuid4
 
-from starlette.status import HTTP_400_BAD_REQUEST, HTTP_502_BAD_GATEWAY
+from starlette.status import (
+    HTTP_400_BAD_REQUEST,
+    HTTP_502_BAD_GATEWAY,
+    HTTP_504_GATEWAY_TIMEOUT,
+)
 
 from app.confidence.router import RouterDecision, route
 from app.confidence.scoring import score_confidence
 from app.core.errors import AxiomError, ErrorCode
 from app.db.models import Document, Message, Session
+from app.llm.provider import LLMTimeoutError
 from app.rag.generation import MalformedStructuredAnswerError, parse_structured_answer
 from app.rag.grounding import GroundingOutcome, verify_and_ground
 from app.rag.prompts import build_structured_system_prompt
@@ -132,7 +137,7 @@ def _generate_grounded(
     regen_budget = runtime.config.grounding.max_regenerations
 
     while True:
-        raw = runtime.llm.complete_structured(system_prompt=system_prompt, user_prompt=question)
+        raw = _complete_with_timeout_retry(runtime, system_prompt, question)
         try:
             parsed = parse_structured_answer(raw)
         except MalformedStructuredAnswerError as exc:
@@ -149,6 +154,29 @@ def _generate_grounded(
         if outcome.grounded or regen_budget <= 0:
             return outcome
         regen_budget -= 1  # Phases.md Phase 2: regenerate once on grounding failure.
+
+
+def _complete_with_timeout_retry(runtime: Runtime, system_prompt: str, question: str) -> str:
+    """Run the structured completion, retrying on timeout per the config budget.
+
+    Design.md §5: an LLM timeout retries once, then surfaces a structured 504
+    (never a bare 500, never a silent hang). The retry budget is
+    `generation.max_timeout_retries` — dead config until now (Phase 4 sweep).
+    """
+    attempts_left = runtime.config.generation.max_timeout_retries
+    while True:
+        try:
+            return runtime.llm.complete_structured(
+                system_prompt=system_prompt, user_prompt=question
+            )
+        except LLMTimeoutError as exc:
+            if attempts_left <= 0:
+                raise AxiomError(
+                    ErrorCode.LLM_TIMEOUT,
+                    "The language model timed out. Try again in a moment.",
+                    status_code=HTTP_504_GATEWAY_TIMEOUT,
+                ) from exc
+            attempts_left -= 1
 
 
 def _try_web_fallback(

@@ -23,6 +23,7 @@ See [docs/Architecture.md](docs/Architecture.md) for the full design.
 | [docs/Rules.md](docs/Rules.md) | Non-negotiable project rules |
 | [docs/Phases.md](docs/Phases.md) | Build order + exit criteria |
 | [docs/EVAL.md](docs/EVAL.md) | Evaluation strategy + targets |
+| [docs/DEPLOY_RUNBOOK.md](docs/DEPLOY_RUNBOOK.md) | Deploy walkthrough (Render + Vercel + Neon) |
 | [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) | Workflow + merge checklist |
 | [docs/adr/](docs/adr/) | Architecture decision records |
 
@@ -84,6 +85,47 @@ pnpm run dev        # http://localhost:5173
 - Budget caps (`MAX_REQUEST_TOKENS`, `DAILY_TOKEN_CAP`, `MONTHLY_SPEND_USD`) set
   in `.env` override the `budget.*` defaults in `config.yaml`.
 
+## Evaluation
+
+Axiom's tagline is measurable, so it is measured. A golden set of 30 Q&A pairs
+(18 in-corpus / 6 out-of-corpus / 6 adversarial) runs the **real** query pipeline
+over deterministic offline doubles — no live calls in CI (EVAL.md). Re-run with:
+
+```bash
+cd backend
+pytest evals/                 # offline gate (CI default)
+pytest evals/ --run-llm       # + live RAGAS scoring (needs OPENAI_API_KEY, spends tokens)
+```
+
+| Metric | Result | Target |
+|--------|--------|--------|
+| Citation precision | **1.000** (24/24) | ≥ 0.95 |
+| Unsupported-claim escape rate | **0** | 0 |
+| Confident out-of-corpus answers | **0** | 0 |
+| Web-fallback rate | 0.200 (6/30) | — |
+| Faithfulness (RAGAS) | `--run-llm` | ≥ 0.85 |
+| Answer relevancy (RAGAS) | `--run-llm` | ≥ 0.80 |
+
+Offline numbers are reproducible from `pytest backend/evals/`; RAGAS faithfulness
+and answer relevancy need a live judge model and are gated behind `--run-llm`.
+The hallucination gate (`evals/test_hallucination.py`) fails the build if any
+fabricated citation reaches the user or any out-of-corpus question is answered
+confidently — this is the test that proves the tagline.
+
+### Threshold tuning
+
+Router thresholds were tuned on the golden set (`python -m evals.tuning`, full
+report in [`backend/evals/reports/threshold-tuning.md`](backend/evals/reports/threshold-tuning.md)).
+The in-corpus score floor is 0.905; a 0.15 noise buffer below it lands `high` at
+0.75, confirming the a-priori default. In-corpus recall holds at 100% until
+`high` crosses the floor, and the escape rate is 0 at **every** threshold.
+
+| Thresholds | In-corpus trusted (green) | In-corpus flagged | Escapes |
+|------------|---------------------------|-------------------|---------|
+| before — default `high=0.75, low=0.45` | 18/18 | 0 | 0 |
+| after — tuned `high=0.75, low=0.45` | 18/18 | 0 | 0 |
+| stress `high=0.95` | 3/18 | 15 | 0 |
+
 ## API (v1)
 
 Base URL `/api/v1`. Ingestion, retrieval, and chat need an `OPENAI_API_KEY`
@@ -117,8 +159,13 @@ docs/        Spec: PRD, Architecture, Design, Rules, Phases, ADRs
 
 ## Status
 
-**Phase 1 (Core RAG) — complete.** Ingestion (parse → chunk → embed → store),
-top-k retrieval, a grounded chat endpoint, Postgres persistence with chat
-history, and a minimal chat UI are in place on top of the Phase 0 skeleton.
-Grounding is **not yet verified** — the citation verifier, confidence scoring,
-and web fallback arrive in Phases 2-3. See [docs/Phases.md](docs/Phases.md).
+**Phases 0-3 complete; Phase 4 (evals, polish, deploy) in progress.** The full
+pipeline is in place: ingestion → top-k retrieval → grounded generation → the
+citation **verification hard gate** → confidence scoring → answer / flag / web
+fallback, with every routing decision logged and a budget guard on all
+LLM/embedding/search calls. Fabricated citations cannot reach the UI (proven by
+tests), and out-of-corpus questions are flagged or web-answered, never
+hallucinated. Phase 4 adds the golden-set eval harness (see
+[Evaluation](#evaluation)), threshold tuning, and the deploy configs
+([docs/DEPLOY_RUNBOOK.md](docs/DEPLOY_RUNBOOK.md)). See
+[docs/Phases.md](docs/Phases.md) for the checklist.

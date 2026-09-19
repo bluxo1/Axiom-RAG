@@ -319,6 +319,10 @@ class Settings(BaseSettings):
     chroma_host: str = "localhost"
     chroma_port: int = Field(default=8001, gt=0, le=65535)
 
+    # Emit HSTS (Strict-Transport-Security). Meaningful only behind TLS, so it
+    # defaults off for plain-HTTP dev and the deploy turns it on (see .env.example).
+    enable_hsts: bool = False
+
     # Unset (or blank) means "use the config.yaml default".
     max_request_tokens: int | None = None
     daily_token_cap: int | None = None

@@ -43,6 +43,12 @@ dev = [
   "httpx2>=2.13,<3.0",
   "types-PyYAML>=6.0,<7.0",
 ]
+# Live-eval only (EVAL.md §3): RAGAS faithfulness / answer-relevancy scoring
+# needs a judge model and is imported lazily behind `pytest evals/ --run-llm`,
+# so CI never installs it and the offline eval run has no extra dependencies.
+eval = [
+  "ragas>=0.2,<0.3",
+]
 
 [tool.hatch.version]
 path = "app/__init__.py"
@@ -80,6 +86,7 @@ select = [
 # ARG001/ARG002: fixtures and provider test doubles take arguments they don't
 # use (a framework passes them, or a Protocol requires the signature).
 "tests/*" = ["ARG001", "ARG002"]
+"evals/*" = ["ARG001", "ARG002"]
 
 [tool.ruff.lint.flake8-tidy-imports]
 ban-relative-imports = "parents"
@@ -90,7 +97,7 @@ python_version = "3.11"
 strict = true
 warn_unreachable = true
 warn_unused_configs = true
-files = ["app", "tests"]
+files = ["app", "tests", "evals"]
 plugins = ["pydantic.mypy"]
 
 [tool.pydantic-mypy]
@@ -113,6 +120,10 @@ module = [
   "tiktoken",
   "tiktoken.*",
   "numpy",
+  # Live-eval only: the `eval` extra, not installed in CI (see evals/ragas_runner.py).
+  "ragas",
+  "ragas.*",
+  "datasets",
 ]
 follow_imports = "skip"
 follow_imports_for_stubs = true
@@ -120,7 +131,7 @@ ignore_missing_imports = true
 
 # ─── Tests ────────────────────────────────────────────────────────────────────
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["tests", "evals"]
 addopts = "-q --strict-markers --strict-config"
 filterwarnings = [
   # Our own warnings are bugs: fail on them.
