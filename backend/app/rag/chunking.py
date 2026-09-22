@@ -24,7 +24,8 @@ Splitter = Callable[[str], list[str]]
 
 def chunk_id_for(doc_id: str, index: int) -> str:
     """`sha1(doc_id:index)` (Design.md §2.1). Stable across re-ingestion."""
-    return hashlib.sha1(f"{doc_id}:{index}".encode()).hexdigest()
+    # Design.md requires a stable SHA-1 identifier; it is not a security hash.
+    return hashlib.sha1(f"{doc_id}:{index}".encode(), usedforsecurity=False).hexdigest()
 
 
 def chunk_document(

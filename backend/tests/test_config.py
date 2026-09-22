@@ -75,8 +75,8 @@ def test_vector_store_pins_cosine_similarity(knobs: Knobs) -> None:
 
 def test_collection_is_namespaced_by_embedding_model(config: AxiomConfig) -> None:
     """ADR-0001: a model switch must not mix incompatible vectors."""
-    assert config.embedding.slug == "text_embedding_3_small"
-    assert config.collection_name == "chunks_text_embedding_3_small"
+    assert config.embedding.slug == "gemini_embedding_001"
+    assert config.collection_name == "chunks_gemini_embedding_001"
 
 
 # ─── Invalid configuration must fail loudly ───────────────────────────────────
@@ -160,11 +160,16 @@ def test_relative_path_resolves_from_the_repository_root() -> None:
     assert resolve_config_path(Path("config.yaml")) == CONFIG_PATH
 
 
+def test_dotenv_resolves_from_the_repository_root() -> None:
+    """README starts in `backend/`, but deployment settings live at repo root."""
+    assert Settings.model_config["env_file"] == CONFIG_PATH.parent / ".env"
+
+
 # ─── Environment overrides (Prompt.md Rule 8, Design.md §6) ───────────────────
 
 
 def test_budget_defaults_come_from_yaml(knobs: Knobs) -> None:
-    config = AxiomConfig(Settings(), knobs)
+    config = AxiomConfig(Settings(_env_file=None), knobs)
 
     assert config.budget.max_request_tokens == knobs.budget.max_request_tokens
     assert config.budget.daily_token_cap == knobs.budget.daily_token_cap
@@ -176,11 +181,45 @@ def test_env_overrides_budget_caps(knobs: Knobs, monkeypatch: pytest.MonkeyPatch
     monkeypatch.setenv("DAILY_TOKEN_CAP", "4567")
     monkeypatch.setenv("MONTHLY_SPEND_USD", "1.25")
 
-    config = AxiomConfig(Settings(), knobs)
+    config = AxiomConfig(Settings(_env_file=None), knobs)
 
     assert config.budget.max_request_tokens == 123
     assert config.budget.daily_token_cap == 4567
     assert config.budget.monthly_spend_usd == 1.25
+
+
+def test_env_overrides_rate_limits(knobs: Knobs, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Phase 4 hardening: prod tightens limits without editing committed config."""
+    monkeypatch.setenv("RATE_LIMIT_CAPACITY", "10")
+    monkeypatch.setenv("RATE_LIMIT_REFILL_PER_SECOND", "0.5")
+
+    config = AxiomConfig(Settings(_env_file=None), knobs)
+
+    assert config.rate_limit.capacity == 10.0
+    assert config.rate_limit.refill_per_second == 0.5
+
+
+def test_blank_rate_limit_env_falls_back_to_yaml(
+    knobs: Knobs, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Blank (`.env.example` default) means "use the generous dev values"."""
+    monkeypatch.setenv("RATE_LIMIT_CAPACITY", "")
+    monkeypatch.setenv("RATE_LIMIT_REFILL_PER_SECOND", "")
+
+    config = AxiomConfig(Settings(_env_file=None), knobs)
+
+    assert config.rate_limit.capacity == knobs.rate_limit.capacity
+    assert config.rate_limit.refill_per_second == knobs.rate_limit.refill_per_second
+
+
+def test_invalid_rate_limit_override_is_rejected(
+    knobs: Knobs, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An env var must clear the same bar as a committed value."""
+    monkeypatch.setenv("RATE_LIMIT_CAPACITY", "0")
+
+    with pytest.raises(ValueError, match="capacity"):
+        AxiomConfig(Settings(_env_file=None), knobs)
 
 
 def test_blank_env_var_falls_back_to_yaml(knobs: Knobs, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -188,7 +227,7 @@ def test_blank_env_var_falls_back_to_yaml(knobs: Knobs, monkeypatch: pytest.Monk
     monkeypatch.setenv("MAX_REQUEST_TOKENS", "")
     monkeypatch.setenv("OPENAI_API_KEY", "   ")
 
-    config = AxiomConfig(Settings(), knobs)
+    config = AxiomConfig(Settings(_env_file=None), knobs)
 
     assert config.budget.max_request_tokens == knobs.budget.max_request_tokens
     assert config.settings.openai_api_key is None
@@ -199,14 +238,41 @@ def test_invalid_env_override_is_rejected(knobs: Knobs, monkeypatch: pytest.Monk
     monkeypatch.setenv("DAILY_TOKEN_CAP", "0")
 
     with pytest.raises(ValueError, match="daily_token_cap"):
-        AxiomConfig(Settings(), knobs)
+        AxiomConfig(Settings(_env_file=None), knobs)
+
+
+def test_openai_api_base_blank_means_official_endpoint(
+    knobs: Knobs, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ADR-0003: unset/blank OPENAI_API_BASE targets api.openai.com (None)."""
+    monkeypatch.setenv("OPENAI_API_BASE", "")
+
+    config = AxiomConfig(Settings(_env_file=None), knobs)
+
+    assert config.settings.openai_api_base is None
+
+
+def test_openai_api_base_override_is_picked_up(
+    knobs: Knobs, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ADR-0003: an OpenAI-compatible endpoint (e.g. Gemini) is read from env."""
+    monkeypatch.setenv(
+        "OPENAI_API_BASE", "https://generativelanguage.googleapis.com/v1beta/openai/"
+    )
+
+    config = AxiomConfig(Settings(_env_file=None), knobs)
+
+    assert (
+        config.settings.openai_api_base
+        == "https://generativelanguage.googleapis.com/v1beta/openai/"
+    )
 
 
 def test_secrets_are_not_exposed_in_repr(monkeypatch: pytest.MonkeyPatch) -> None:
     """Rules.md §2: no secrets in logs or tracebacks."""
     monkeypatch.setenv("OPENAI_API_KEY", "sk-do-not-log-me")
 
-    settings = Settings()
+    settings = Settings(_env_file=None)
 
     assert settings.openai_api_key is not None
     assert settings.openai_api_key.get_secret_value() == "sk-do-not-log-me"

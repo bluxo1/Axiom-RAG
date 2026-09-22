@@ -20,7 +20,8 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-axiom}
       POSTGRES_DB: ${POSTGRES_DB:-axiom}
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      # Dev-only host access; never expose Postgres to the LAN.
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -41,7 +42,8 @@ services:
       ANONYMIZED_TELEMETRY: "FALSE"
     ports:
       # Host 8001 to leave 8000 for the backend.
-      - "${CHROMA_PORT:-8001}:8000"
+      # The Chroma API has no auth in dev, so keep it loopback-only.
+      - "127.0.0.1:${CHROMA_PORT:-8001}:8000"
     volumes:
       - chromadata:/chroma/chroma
     # No container healthcheck: published chroma images >= 1.5.7 ship without
@@ -68,7 +70,8 @@ services:
       CHROMA_PORT: "8000"
       CONFIG_PATH: /srv/axiom/config.yaml
     ports:
-      - "${BACKEND_PORT:-8000}:8000"
+      # Local quickstart only; Render publishes the service separately.
+      - "127.0.0.1:${BACKEND_PORT:-8000}:8000"
     volumes:
       # Read-only so a container can never rewrite the committed knobs.
       - ./config.yaml:/srv/axiom/config.yaml:ro

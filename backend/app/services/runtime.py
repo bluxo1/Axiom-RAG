@@ -100,7 +100,8 @@ class Runtime:
     def _build_embedder(self) -> Embedder:
         section = self.config.embedding
         if section.provider == "openai":
-            key = self.config.settings.openai_api_key
+            settings = self.config.settings
+            key = settings.openai_api_key
             if key is None:
                 raise _unavailable("OpenAI API key is not configured (set OPENAI_API_KEY).")
             return GuardedEmbedder(
@@ -109,6 +110,7 @@ class Runtime:
                     model=section.model,
                     dimensions=section.dimensions,
                     batch_size=section.batch_size,
+                    api_base=settings.openai_api_base,
                 ),
                 self.budget,
                 model=section.model,
@@ -120,7 +122,8 @@ class Runtime:
     def _build_llm(self) -> LLMProvider:
         section = self.config.generation
         if section.provider == "openai":
-            key = self.config.settings.openai_api_key
+            settings = self.config.settings
+            key = settings.openai_api_key
             if key is None:
                 raise _unavailable("OpenAI API key is not configured (set OPENAI_API_KEY).")
             return GuardedLLM(
@@ -129,6 +132,7 @@ class Runtime:
                     model=section.model,
                     temperature=section.temperature,
                     timeout_seconds=section.timeout_seconds,
+                    api_base=settings.openai_api_base,
                 ),
                 self.budget,
                 model=section.model,

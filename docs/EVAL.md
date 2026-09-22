@@ -37,6 +37,12 @@ pytest evals/ -v --run-llm   # live LLM eval (costs tokens)
 pytest evals/ -v             # recorded-fixture mode (CI default)
 ```
 
+The optional RAGAS extra is never installed in production or CI. Current
+RAGAS advisories `PYSEC-2026-3046` and `PYSEC-2026-3047` affect multimodal
+contexts that dereference caller-provided URLs or file paths. Axiom's live
+runner passes only trusted text contexts built from `evals/corpus/`; do not
+adapt it to score untrusted multimodal input until RAGAS publishes a fix.
+
 ## 4. Hallucination Test (the money test)
 
 `evals/test_hallucination.py` asserts, over the adversarial set:

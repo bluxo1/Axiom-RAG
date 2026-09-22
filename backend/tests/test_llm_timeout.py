@@ -107,7 +107,7 @@ def test_timeout_retries_honor_the_config_budget(tmp_path: Path) -> None:
     raw = read_raw_config()
     raw["generation"]["max_timeout_retries"] = 0
     path = write_config(tmp_path, raw)
-    zero_budget = AxiomConfig(Settings(), load_knobs(path))
+    zero_budget = AxiomConfig(Settings(_env_file=None), load_knobs(path))
 
     llm = TimingOutLLM(times=5)
     with _chat_client(zero_budget, llm) as client:

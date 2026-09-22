@@ -42,8 +42,15 @@ services:
       # dialect: postgresql+psycopg://USER:PASSWORD@HOST/DB?sslmode=require
       - key: DATABASE_URL
         sync: false
+      # Gemini API key from Google AI Studio. The compatibility variable name is
+      # shared by every OpenAI-protocol client in the backend (ADR-0003).
       - key: OPENAI_API_KEY
         sync: false
+      # This endpoint must match the committed Gemini model names in config.yaml.
+      # Keep it env-controlled so an OpenAI deployment can override it while
+      # restoring OpenAI-supported model names.
+      - key: OPENAI_API_BASE
+        value: https://generativelanguage.googleapis.com/v1beta/openai/
       - key: TAVILY_API_KEY
         sync: false
       # Vector store: reach the Chroma private service over Render's network.
@@ -64,6 +71,12 @@ services:
         value: "200000"
       - key: MONTHLY_SPEND_USD
         value: "10.0"
+      # Rate limiting (Phase 4 hardening sweep) — tighter than the generous
+      # dev defaults in config.yaml: burst 10, one request per 2s sustained.
+      - key: RATE_LIMIT_CAPACITY
+        value: "10"
+      - key: RATE_LIMIT_REFILL_PER_SECOND
+        value: "0.5"
 
   # ─── Vector store: pinned ChromaDB (ADR-0002 dev backend, prod until pgvector)
   - type: pserv

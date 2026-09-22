@@ -59,7 +59,9 @@ class HashingEmbedder:
     def _embed(self, text: str) -> list[float]:
         vector = [0.0] * self._dimensions
         for token in _TOKEN.findall(text.lower()):
-            digest = hashlib.sha1(token.encode()).digest()
+            # Stable feature hashing only; this digest is never used for
+            # authentication, signatures, or any other security decision.
+            digest = hashlib.sha1(token.encode(), usedforsecurity=False).digest()
             bucket = int.from_bytes(digest[:4], "big") % self._dimensions
             vector[bucket] += 1.0
         return _l2_normalize(vector)
@@ -74,10 +76,34 @@ class HashingEmbedder:
 class OpenAIEmbedder:
     """OpenAI embeddings via LlamaIndex (Architecture.md §5)."""
 
-    def __init__(self, *, api_key: str, model: str, dimensions: int, batch_size: int) -> None:
+    def __init__(
+        self,
+        *,
+        api_key: str,
+        model: str,
+        dimensions: int,
+        batch_size: int,
+        api_base: str | None = None,
+    ) -> None:
+        self._dimensions = dimensions
+        if api_base is not None:
+            # ADR-0003: an OpenAI-compatible endpoint. Plain `OpenAIEmbedding`
+            # validates the model name against an OpenAI-only enum and rejects
+            # third-party models (e.g. gemini-embedding-001); `OpenAILikeEmbedding`
+            # takes any name over the same OpenAI protocol.
+            from llama_index.embeddings.openai_like import OpenAILikeEmbedding
+
+            self._client = OpenAILikeEmbedding(
+                model_name=model,
+                api_key=api_key,
+                api_base=api_base,
+                dimensions=dimensions,
+                embed_batch_size=batch_size,
+            )
+            return
+
         from llama_index.embeddings.openai import OpenAIEmbedding
 
-        self._dimensions = dimensions
         self._client = OpenAIEmbedding(
             model=model,
             api_key=api_key,

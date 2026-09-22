@@ -244,7 +244,9 @@ class BudgetSection(StrictModel):
 class RateLimitSection(StrictModel):
     """Per-session token bucket (PRD.md §8 security, Design.md §6).
 
-    Dev is generous; the Phase 4 hardening sweep tightens prod.
+    YAML defaults are generous so local dev is not annoying; prod tightens
+    them via `RATE_LIMIT_CAPACITY` / `RATE_LIMIT_REFILL_PER_SECOND` (render.yaml),
+    the same override pattern the budget caps use (Prompt.md Rule 8).
     """
 
     enabled: bool
@@ -252,6 +254,20 @@ class RateLimitSection(StrictModel):
     refill_per_second: PositiveFloat
     exempt_paths: tuple[str, ...]
     max_tracked_identities: PositiveInt
+
+    def with_env_overrides(self, settings: Settings) -> RateLimitSection:
+        """Return a copy with any environment-provided limit applied."""
+        overrides: dict[str, float] = {}
+        if settings.rate_limit_capacity is not None:
+            overrides["capacity"] = settings.rate_limit_capacity
+        if settings.rate_limit_refill_per_second is not None:
+            overrides["refill_per_second"] = settings.rate_limit_refill_per_second
+        if not overrides:
+            return self
+        # Re-validate rather than model_copy: an env var must clear the same
+        # bar as a committed value (e.g. RATE_LIMIT_CAPACITY=0 is a DoS, not a
+        # limit).
+        return RateLimitSection.model_validate({**self.model_dump(), **overrides})
 
 
 class CacheSection(StrictModel):
@@ -294,11 +310,23 @@ def _blank_to_none(value: Any) -> Any:  # noqa: ANN401 - pre-validation hook
     return value
 
 
+def _repo_root() -> Path:
+    """Repository root, derived from this file's location.
+
+    `backend/app/config.py` -> `backend/app` -> `backend` -> repo root.
+    """
+    return Path(__file__).resolve().parents[2]
+
+
 class Settings(BaseSettings):
     """Environment-provided secrets, endpoints, and budget overrides."""
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        # README starts the API from `backend/`, while the one supported .env
+        # lives at the repository root. Resolve it from this module rather than
+        # the process CWD so both `uvicorn` and root-level tooling load the same
+        # deployment settings.
+        env_file=_repo_root() / ".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
         # `.env` also carries POSTGRES_* and VITE_* for compose and the browser;
@@ -311,6 +339,9 @@ class Settings(BaseSettings):
     config_path: Path = Path("config.yaml")
 
     openai_api_key: SecretStr | None = None
+    # OpenAI-compatible endpoint override (e.g. Google's Gemini compatibility
+    # layer). Blank/unset means the real api.openai.com. See ADR-0003.
+    openai_api_base: str | None = None
     groq_api_key: SecretStr | None = None
     tavily_api_key: SecretStr | None = None
     brave_api_key: SecretStr | None = None
@@ -327,15 +358,20 @@ class Settings(BaseSettings):
     max_request_tokens: int | None = None
     daily_token_cap: int | None = None
     monthly_spend_usd: float | None = None
+    rate_limit_capacity: float | None = None
+    rate_limit_refill_per_second: float | None = None
 
     _blank_is_unset = field_validator(
         "openai_api_key",
+        "openai_api_base",
         "groq_api_key",
         "tavily_api_key",
         "brave_api_key",
         "max_request_tokens",
         "daily_token_cap",
         "monthly_spend_usd",
+        "rate_limit_capacity",
+        "rate_limit_refill_per_second",
         mode="before",
     )(_blank_to_none)
 
@@ -362,21 +398,13 @@ class AxiomConfig:
         self.confidence = knobs.confidence
         self.fallback = knobs.fallback
         self.budget = knobs.budget.with_env_overrides(settings)
-        self.rate_limit = knobs.rate_limit
+        self.rate_limit = knobs.rate_limit.with_env_overrides(settings)
         self.cache = knobs.cache
 
     @property
     def collection_name(self) -> str:
         """Vector-store collection for the active embedding model (ADR-0001)."""
         return f"{self.vector_store.collection_prefix}_{self.embedding.slug}"
-
-
-def _repo_root() -> Path:
-    """Repository root, derived from this file's location.
-
-    `backend/app/config.py` -> `backend/app` -> `backend` -> repo root.
-    """
-    return Path(__file__).resolve().parents[2]
 
 
 def resolve_config_path(config_path: Path) -> Path:

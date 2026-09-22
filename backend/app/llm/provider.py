@@ -73,7 +73,28 @@ class OpenAILLM:
         model: str,
         temperature: float,
         timeout_seconds: float,
+        api_base: str | None = None,
     ) -> None:
+        if api_base is not None:
+            # ADR-0003: an OpenAI-compatible endpoint (e.g. Google's Gemini
+            # compatibility layer). Plain `OpenAI` resolves the context window
+            # from an OpenAI-only model table and raises on unknown names, so
+            # third-party models must use `OpenAILike`, which takes the
+            # context window explicitly and never consults the catalog. The
+            # HTTP call is the same OpenAI protocol either way.
+            from llama_index.llms.openai_like import OpenAILike
+
+            self._client = OpenAILike(
+                model=model,
+                api_key=api_key,
+                api_base=api_base,
+                temperature=temperature,
+                timeout=timeout_seconds,
+                context_window=131072,
+                is_chat_model=True,
+            )
+            return
+
         from llama_index.llms.openai import OpenAI
 
         self._client = OpenAI(

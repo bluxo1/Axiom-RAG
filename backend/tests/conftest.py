@@ -38,7 +38,7 @@ def knobs() -> Knobs:
 
 @pytest.fixture
 def config(knobs: Knobs) -> AxiomConfig:
-    return AxiomConfig(Settings(), knobs)
+    return AxiomConfig(Settings(_env_file=None), knobs)
 
 
 @pytest.fixture
