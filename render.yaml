@@ -15,7 +15,7 @@ services:
     dockerContext: .
     # Bind to Render's injected $PORT rather than the image's default 8000.
     dockerCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
-    plan: starter
+    plan: free
     # Liveness is dependency-free (app/api/v1/health.py) — safe as a health gate.
     healthCheckPath: /health
     # Deploy on demand from the runbook, not on every push.

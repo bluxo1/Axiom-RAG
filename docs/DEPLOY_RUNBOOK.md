@@ -129,9 +129,10 @@ blocker (EVAL.md §4): re-run `pytest backend/evals/` before shipping further.
   (Rules.md §2, §5). `.env` is git-ignored; `.env.example` documents every var.
 - **HSTS** is on in prod (`ENABLE_HSTS=true`) because Render terminates TLS; it
   stays off in plain-HTTP dev.
-- **Free-tier cold starts.** Render's free/starter web service sleeps when idle,
-  so the first request (and `first verified token < 3s`, Phase 3) can be slow
-  until it wakes. Use a paid instance for latency SLAs.
+- **Free-tier cold starts.** Render's free web service sleeps after 15 minutes
+  without inbound traffic, so the first request (and `first verified token
+  < 3s`, Phase 3) can be slow until it wakes. Free instances are for demos and
+  previews, not latency SLAs.
 
 ## Rollback
 
