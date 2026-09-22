@@ -11,14 +11,19 @@ from __future__ import annotations
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from pydantic import SecretStr
 
-from app.config import AxiomConfig
+from app.config import AxiomConfig, Knobs, Settings
 from app.core.errors import AxiomError, ErrorCode, ErrorResponse
+from app.db.session import Database
+from app.llm.embeddings import HashingEmbedder
 from app.main import create_app
 from app.services.runtime import Runtime
+from tests.helpers import TEST_DATABASE_URL
 
 BOOM = "/api/v1/_boom"
 TEAPOT = "/api/v1/_teapot"
+DOCS = "/api/v1/documents"
 
 
 @pytest.fixture
@@ -106,3 +111,56 @@ def test_every_error_response_matches_the_schema(client: TestClient) -> None:
     parsed = ErrorResponse.model_validate(response.json())
 
     assert parsed.error.code is ErrorCode.NOT_FOUND
+
+
+# ─── 503 PROVIDER_UNAVAILABLE (README documents it; it must be reachable) ─────
+
+
+def _runtime_app(config: AxiomConfig) -> tuple[FastAPI, Database]:
+    """An app whose providers build lazily from real config (no fakes)."""
+    database = Database(TEST_DATABASE_URL)
+    database.create_all()
+    return create_app(config, runtime=Runtime(config, database)), database
+
+
+def test_missing_openai_key_returns_structured_503(config: AxiomConfig) -> None:
+    """A missing key surfaces as 503 PROVIDER_UNAVAILABLE, never a silent 500."""
+    app, database = _runtime_app(config)
+
+    try:
+        with TestClient(app) as client:
+            response = client.post(DOCS, files={"file": ("kb.txt", b"content", "text/plain")})
+    finally:
+        database.dispose()
+
+    assert response.status_code == 503
+    body = response.json()
+    assert body["error"]["code"] == "PROVIDER_UNAVAILABLE"
+    assert "OPENAI_API_KEY" in body["error"]["message"]
+
+
+def test_unreachable_vector_store_returns_structured_503(knobs: Knobs) -> None:
+    """An unreachable Chroma is a 503 too — distinct from a bug (500).
+
+    Settings are explicit (offline embedder injected; Chroma pointed at a
+    port nothing listens on) so the test makes no network call beyond a
+    refused localhost connection.
+    """
+    cfg = AxiomConfig(
+        Settings(openai_api_key=SecretStr("test-key"), chroma_host="127.0.0.1", chroma_port=1),
+        knobs,
+    )
+    database = Database(TEST_DATABASE_URL)
+    database.create_all()
+    app = create_app(cfg, runtime=Runtime(cfg, database, embedder=HashingEmbedder(64)))
+
+    try:
+        with TestClient(app) as client:
+            response = client.post(DOCS, files={"file": ("kb.txt", b"content", "text/plain")})
+    finally:
+        database.dispose()
+
+    assert response.status_code == 503
+    body = response.json()
+    assert body["error"]["code"] == "PROVIDER_UNAVAILABLE"
+    assert "vector store" in body["error"]["message"]
