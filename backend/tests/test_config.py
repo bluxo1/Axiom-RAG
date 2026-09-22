@@ -236,6 +236,33 @@ def test_invalid_env_override_is_rejected(knobs: Knobs, monkeypatch: pytest.Monk
         AxiomConfig(Settings(), knobs)
 
 
+def test_openai_api_base_blank_means_official_endpoint(
+    knobs: Knobs, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ADR-0003: unset/blank OPENAI_API_BASE targets api.openai.com (None)."""
+    monkeypatch.setenv("OPENAI_API_BASE", "")
+
+    config = AxiomConfig(Settings(), knobs)
+
+    assert config.settings.openai_api_base is None
+
+
+def test_openai_api_base_override_is_picked_up(
+    knobs: Knobs, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ADR-0003: an OpenAI-compatible endpoint (e.g. Gemini) is read from env."""
+    monkeypatch.setenv(
+        "OPENAI_API_BASE", "https://generativelanguage.googleapis.com/v1beta/openai/"
+    )
+
+    config = AxiomConfig(Settings(), knobs)
+
+    assert (
+        config.settings.openai_api_base
+        == "https://generativelanguage.googleapis.com/v1beta/openai/"
+    )
+
+
 def test_secrets_are_not_exposed_in_repr(monkeypatch: pytest.MonkeyPatch) -> None:
     """Rules.md §2: no secrets in logs or tracebacks."""
     monkeypatch.setenv("OPENAI_API_KEY", "sk-do-not-log-me")

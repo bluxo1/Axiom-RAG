@@ -120,6 +120,7 @@ module = [
   "tiktoken",
   "tiktoken.*",
   "numpy",
+  "numpy.*",
   # Live-eval only: the `eval` extra, not installed in CI (see evals/ragas_runner.py).
   "ragas",
   "ragas.*",

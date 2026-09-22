@@ -16,10 +16,44 @@ from pydantic import SecretStr
 from app.config import AxiomConfig, Knobs, Settings
 from app.core.errors import AxiomError, ErrorCode, ErrorResponse
 from app.db.session import Database
-from app.llm.embeddings import HashingEmbedder
+from app.llm.embeddings import HashingEmbedder, OpenAIEmbedder
+from app.llm.guarded import GuardedEmbedder, GuardedLLM
+from app.llm.provider import OpenAILLM
 from app.main import create_app
 from app.services.runtime import Runtime
 from tests.helpers import TEST_DATABASE_URL
+
+
+def test_api_base_flows_into_runtime_builders(knobs: Knobs) -> None:
+    """ADR-0003: an OpenAI-compatible endpoint reaches both provider clients.
+
+    LlamaIndex client construction is offline, so the builders can be invoked
+    here; the assertions prove `Runtime` passes `settings.openai_api_base`
+    through instead of silently hardcoding api.openai.com.
+    """
+    base = "https://generativelanguage.googleapis.com/v1beta/openai/"
+    cfg = AxiomConfig(
+        Settings(
+            openai_api_key=SecretStr("test-key"),
+            openai_api_base=base,
+        ),
+        knobs,
+    )
+    runtime = Runtime(cfg, Database(TEST_DATABASE_URL))
+
+    llm = runtime._build_llm()
+    embedder = runtime._build_embedder()
+
+    # Builders wrap in the Rule 8 budget guard; unwrap to the real provider.
+    assert isinstance(llm, GuardedLLM)
+    assert isinstance(embedder, GuardedEmbedder)
+    inner_llm = llm._inner
+    inner_embedder = embedder._inner
+    assert isinstance(inner_llm, OpenAILLM)
+    assert isinstance(inner_embedder, OpenAIEmbedder)
+    assert str(inner_llm._client.api_base) == base
+    assert str(inner_embedder._client.api_base) == base
+
 
 BOOM = "/api/v1/_boom"
 TEAPOT = "/api/v1/_teapot"

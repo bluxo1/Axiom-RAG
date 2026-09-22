@@ -44,6 +44,11 @@ services:
         sync: false
       - key: OPENAI_API_KEY
         sync: false
+      # OpenAI-compatible endpoint override (ADR-0003). Set in the dashboard to
+      # point the backend at e.g. Google's Gemini compatibility layer; unset =
+      # the real api.openai.com.
+      - key: OPENAI_API_BASE
+        sync: false
       - key: TAVILY_API_KEY
         sync: false
       # Vector store: reach the Chroma private service over Render's network.

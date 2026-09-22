@@ -45,11 +45,45 @@ def _build_live_runtime(config: AxiomConfig) -> Runtime:
     return runtime
 
 
-def score_golden_live(config: AxiomConfig, golden: list[GoldenEntry]) -> RagasScores:
-    """Run in-corpus golden entries live and score them with RAGAS."""
+def score_golden_live(
+    config: AxiomConfig, golden: list[GoldenEntry], *, judge_model: str | None = None
+) -> RagasScores:
+    """Run in-corpus golden entries live and score them with RAGAS.
+
+    The judge follows the app's own provider (EVAL.md §3): same key, same
+    endpoint, same model family — so an OpenAI-compatible override
+    (`OPENAI_API_BASE`, ADR-0003) applies to scoring too and the judge can
+    never call a different vendor than the one being evaluated.
+    """
     from datasets import Dataset
+    from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+    from pydantic import SecretStr
     from ragas import evaluate
+    from ragas.embeddings import LangchainEmbeddingsWrapper
+    from ragas.llms import LangchainLLMWrapper
     from ragas.metrics import answer_relevancy, faithfulness
+
+    settings = config.settings
+    base_url = settings.openai_api_base
+    api_key = settings.openai_api_key
+    if api_key is None:
+        raise RuntimeError("OPENAI_API_KEY is not configured; cannot score live.")
+    secret_key = SecretStr(api_key.get_secret_value())
+    judge = LangchainLLMWrapper(
+        ChatOpenAI(
+            model_name=judge_model or config.generation.model,
+            openai_api_key=secret_key,
+            openai_api_base=base_url,
+            request_timeout=60,
+        )
+    )
+    judge_embeddings = LangchainEmbeddingsWrapper(
+        OpenAIEmbeddings(
+            model=config.embedding.model,
+            openai_api_key=secret_key,
+            openai_api_base=base_url,
+        )
+    )
 
     rows: list[dict[str, object]] = []
     runtime = _build_live_runtime(config)
@@ -73,7 +107,12 @@ def score_golden_live(config: AxiomConfig, golden: list[GoldenEntry]) -> RagasSc
         runtime.db.dispose()
 
     dataset = Dataset.from_list(rows)
-    scores = evaluate(dataset, metrics=[faithfulness, answer_relevancy])
+    scores = evaluate(
+        dataset,
+        metrics=[faithfulness, answer_relevancy],
+        llm=judge,
+        embeddings=judge_embeddings,
+    )
     return RagasScores(
         faithfulness=float(scores["faithfulness"]),
         answer_relevancy=float(scores["answer_relevancy"]),

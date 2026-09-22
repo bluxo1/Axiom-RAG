@@ -74,13 +74,22 @@ class HashingEmbedder:
 class OpenAIEmbedder:
     """OpenAI embeddings via LlamaIndex (Architecture.md §5)."""
 
-    def __init__(self, *, api_key: str, model: str, dimensions: int, batch_size: int) -> None:
+    def __init__(
+        self,
+        *,
+        api_key: str,
+        model: str,
+        dimensions: int,
+        batch_size: int,
+        api_base: str | None = None,
+    ) -> None:
         from llama_index.embeddings.openai import OpenAIEmbedding
 
         self._dimensions = dimensions
         self._client = OpenAIEmbedding(
             model=model,
             api_key=api_key,
+            api_base=api_base,
             dimensions=dimensions,
             embed_batch_size=batch_size,
         )

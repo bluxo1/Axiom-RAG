@@ -327,6 +327,9 @@ class Settings(BaseSettings):
     config_path: Path = Path("config.yaml")
 
     openai_api_key: SecretStr | None = None
+    # OpenAI-compatible endpoint override (e.g. Google's Gemini compatibility
+    # layer). Blank/unset means the real api.openai.com. See ADR-0003.
+    openai_api_base: str | None = None
     groq_api_key: SecretStr | None = None
     tavily_api_key: SecretStr | None = None
     brave_api_key: SecretStr | None = None
@@ -348,6 +351,7 @@ class Settings(BaseSettings):
 
     _blank_is_unset = field_validator(
         "openai_api_key",
+        "openai_api_base",
         "groq_api_key",
         "tavily_api_key",
         "brave_api_key",

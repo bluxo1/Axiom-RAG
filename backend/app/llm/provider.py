@@ -73,12 +73,14 @@ class OpenAILLM:
         model: str,
         temperature: float,
         timeout_seconds: float,
+        api_base: str | None = None,
     ) -> None:
         from llama_index.llms.openai import OpenAI
 
         self._client = OpenAI(
             model=model,
             api_key=api_key,
+            api_base=api_base,
             temperature=temperature,
             timeout=timeout_seconds,
         )
