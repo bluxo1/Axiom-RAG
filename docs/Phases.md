@@ -65,7 +65,7 @@
 - [x] RAGAS harness: faithfulness + answer relevancy + citation precision
 - [x] Threshold tuning from eval results; record before/after numbers for README
 - [ ] Latency validation under load (P95 < 15s full answer)
-- [ ] Rate limiting + error handling sweep
+- [x] Rate limiting + error handling sweep
 - [ ] Dockerize, deploy (Render + Vercel + Neon)
 - [ ] README: architecture diagram, eval table, demo GIF/video
 
