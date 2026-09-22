@@ -10,6 +10,36 @@ A citation-grounded RAG agent. Every claim is tied to a retrieved, verified sour
 
 Documents → chunks → embeddings → vector store. At query time: retrieve → generate with inline citations → **verify every citation (hard gate)** → score confidence → answer / flag / fall back to web search. Every routing decision is logged.
 
+```mermaid
+flowchart TB
+    subgraph ingest["Ingestion (POST /documents, /documents/url)"]
+        docs["PDF / TXT / MD / URL"] --> parse["parse (pypdf / trafilatura)"]
+        parse --> chunk["chunk 512/64 tokens"]
+        chunk --> embed["embed (text-embedding-3-small)"]
+        embed --> vs[("vector store\n(Chroma dev / pgvector prod)")]
+        chunk --> pg[("Postgres\ndocuments + chunks")]
+    end
+
+    subgraph query["Query time (POST /chat)"]
+        q["question"] --> retrieve["top-k semantic search (k=8)"]
+        vs --> retrieve
+        retrieve --> gen["grounded generation\n(claims + citations)"]
+        gen --> verify["verification hard gate\n(chunk_id exists + supports claim)"]
+        verify -- "fail (max 1 retry)" --> gen
+        verify --> conf["hybrid confidence\nretrieval + faithfulness + coverage"]
+        conf -- "score ≥ 0.75" --> green["answer · GREEN badge"]
+        conf -- "0.45 ≤ score < 0.75" --> yellow["answer + warning · YELLOW badge"]
+        conf -- "score < 0.45" --> web["web fallback (Tavily)\n→ generate → verify → route again"]
+        web --> blue["web-sourced answer · BLUE badge"]
+    end
+
+    green --> logreg[("Postgres: routing decision + spend_log")]
+    yellow --> logreg
+    blue --> logreg
+```
+
+Every LLM/embedding/search call passes the budget guard (`spend_log`); exceeding a cap returns `429 BUDGET_EXCEEDED`. A refusal (`INSUFFICIENT_EVIDENCE`) gets a neutral badge — a flagged "I don't know" beats a confident hallucination.
+
 See [docs/Architecture.md](docs/Architecture.md) for the full design.
 
 ## Documentation
