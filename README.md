@@ -195,8 +195,14 @@ docs/        Spec: PRD, Architecture, Design, Rules, Phases, ADRs
 
 ## Status
 
-**Phases 0-3 and the Phase 4 implementation are complete. Final live release
-evidence is pending.** The full
+**Phases 0-3 and the Phase 4 implementation are complete, and the public app is
+deployed. Final release evidence is still pending.**
+
+- **Frontend:** [axiom-rag.vercel.app](https://axiom-rag.vercel.app)
+- **Backend health:** [axiom-backend-7n5c.onrender.com/health](https://axiom-backend-7n5c.onrender.com/health)
+
+The backend health endpoint returns HTTP 200, and its CORS preflight accepts
+the deployed frontend origin. The full
 pipeline is in place: ingestion → top-k retrieval → grounded generation → the
 citation **verification hard gate** → confidence scoring → answer / flag / web
 fallback, with every routing decision logged and a budget guard on all
@@ -204,6 +210,6 @@ LLM/embedding/search calls. Fabricated citations cannot reach the UI (proven by
 tests), and out-of-corpus questions are flagged or web-answered, never
 hallucinated. Phase 4 adds the golden-set eval harness (see
 [Evaluation](#evaluation)), threshold tuning, security hardening, and deploy
-configs. The remaining v1 gates are a public deployment, live RAGAS and P95
+configs. The remaining v1 gates are the live browser smoke tests, RAGAS and P95
 evidence, and a short demo recording; follow
 [docs/RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md) to finish them.
