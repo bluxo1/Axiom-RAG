@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from app.rag.types import TextChunk
-from app.vector.store import InMemoryVectorStore
+from app.vector.store import InMemoryVectorStore, _vector_literal
 
 
 def _chunk(chunk_id: str, doc_id: str = "doc-1") -> TextChunk:
@@ -56,3 +56,12 @@ def test_length_mismatch_is_rejected() -> None:
     store = InMemoryVectorStore()
     with pytest.raises(ValueError, match="same length"):
         store.add([_chunk("a")], [[1.0], [2.0]])
+
+
+def test_pgvector_literal_validates_dimensions_and_finite_values() -> None:
+    assert _vector_literal([1.0, 0.25], dimensions=2) == "[1,0.25]"
+
+    with pytest.raises(ValueError, match="expected 3"):
+        _vector_literal([1.0, 0.25], dimensions=3)
+    with pytest.raises(ValueError, match="finite"):
+        _vector_literal([1.0, float("nan")], dimensions=2)

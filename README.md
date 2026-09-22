@@ -54,6 +54,7 @@ See [docs/Architecture.md](docs/Architecture.md) for the full design.
 | [docs/Phases.md](docs/Phases.md) | Build order + exit criteria |
 | [docs/EVAL.md](docs/EVAL.md) | Evaluation strategy + targets |
 | [docs/DEPLOY_RUNBOOK.md](docs/DEPLOY_RUNBOOK.md) | Deploy walkthrough (Render + Vercel + Neon) |
+| [docs/RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md) | Final live gates and launch handoff |
 | [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) | Workflow + merge checklist |
 | [docs/adr/](docs/adr/) | Architecture decision records |
 
@@ -112,6 +113,8 @@ pnpm run dev        # http://localhost:5173
   [`config.yaml`](config.yaml). Nothing tunable is hardcoded.
 - **Secrets and per-environment values** live in `.env` only. Copy
   [`.env.example`](.env.example) — every variable is documented there.
+- The deployed browser origin is supplied with `CORS_ORIGINS`; production does
+  not require editing `config.yaml` for CORS.
 - Budget caps (`MAX_REQUEST_TOKENS`, `DAILY_TOKEN_CAP`, `MONTHLY_SPEND_USD`) set
   in `.env` override the `budget.*` defaults in `config.yaml`.
 
@@ -192,13 +195,15 @@ docs/        Spec: PRD, Architecture, Design, Rules, Phases, ADRs
 
 ## Status
 
-**Phases 0-3 complete; Phase 4 (evals, polish, deploy) in progress.** The full
+**Phases 0-3 and the Phase 4 implementation are complete. Final live release
+evidence is pending.** The full
 pipeline is in place: ingestion → top-k retrieval → grounded generation → the
 citation **verification hard gate** → confidence scoring → answer / flag / web
 fallback, with every routing decision logged and a budget guard on all
 LLM/embedding/search calls. Fabricated citations cannot reach the UI (proven by
 tests), and out-of-corpus questions are flagged or web-answered, never
 hallucinated. Phase 4 adds the golden-set eval harness (see
-[Evaluation](#evaluation)), threshold tuning, and the deploy configs
-([docs/DEPLOY_RUNBOOK.md](docs/DEPLOY_RUNBOOK.md)). See
-[docs/Phases.md](docs/Phases.md) for the checklist.
+[Evaluation](#evaluation)), threshold tuning, security hardening, and deploy
+configs. The remaining v1 gates are a public deployment, live RAGAS and P95
+evidence, and a short demo recording; follow
+[docs/RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md) to finish them.

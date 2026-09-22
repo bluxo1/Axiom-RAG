@@ -37,6 +37,14 @@ def test_ragas_faithfulness_and_relevancy_meet_targets(
     from evals.ragas_runner import score_golden_live
 
     scores = score_golden_live(config, golden)
+    print(
+        "\nLive RAGAS results\n"
+        f"faithfulness: {scores.faithfulness:.3f} "
+        f"(target >= {_FAITHFULNESS_TARGET:.2f})\n"
+        f"answer relevancy: {scores.answer_relevancy:.3f} "
+        f"(target >= {_ANSWER_RELEVANCY_TARGET:.2f})\n"
+        f"scored entries: {scores.scored}"
+    )
     assert scores.faithfulness >= _FAITHFULNESS_TARGET, (
         f"faithfulness {scores.faithfulness:.3f} < {_FAITHFULNESS_TARGET}"
     )

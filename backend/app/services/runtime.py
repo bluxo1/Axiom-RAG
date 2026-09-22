@@ -25,7 +25,7 @@ from app.llm.embeddings import Embedder, OpenAIEmbedder
 from app.llm.guarded import GuardedEmbedder, GuardedLLM, GuardedWebSearch
 from app.llm.provider import LLMProvider, OpenAILLM
 from app.search.provider import BraveWebSearch, TavilyWebSearch, WebSearchProvider
-from app.vector.store import ChromaVectorStore, VectorStore
+from app.vector.store import ChromaVectorStore, PgVectorStore, VectorStore
 
 
 def _unavailable(message: str) -> AxiomError:
@@ -142,6 +142,15 @@ class Runtime:
         )
 
     def _build_vector_store(self) -> VectorStore:
+        if self.config.vector_store.backend == "pgvector":
+            try:
+                return PgVectorStore(
+                    engine=self.db.engine,
+                    collection_name=self.config.collection_name,
+                    dimensions=self.config.embedding.dimensions,
+                )
+            except Exception as exc:
+                raise _unavailable(f"pgvector store is unavailable: {exc}") from exc
         if self.config.vector_store.backend == "chroma":
             settings = self.config.settings
             try:

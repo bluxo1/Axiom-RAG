@@ -8,20 +8,16 @@
 | Piece | Host | Source of truth |
 |-------|------|-----------------|
 | Backend (FastAPI) | **Render** web service, Docker | [`render.yaml`](../render.yaml), [`backend/Dockerfile`](../backend/Dockerfile) |
-| Vector store (ChromaDB) | **Render** private service | [`render.yaml`](../render.yaml) |
-| Postgres | **Neon** (managed) | `DATABASE_URL` secret |
+| Postgres + vector store (pgvector) | **Neon** (managed) | `DATABASE_URL` secret, ADR-0002 |
 | Frontend (React/Vite) | **Vercel** static build | [`frontend/vercel.json`](../frontend/vercel.json) |
 
 The backend image bakes `config.yaml` (build context is the repo root), so it
 boots standalone — no bind mount. Tables are created on first startup
 (`app/main.py` lifespan), so there is no separate migration step.
 
-> **Drift flag (Architecture.md §5 / ADR-0002).** Prod is *specified* to use
-> pgvector, but only the Chroma backend is implemented today, so prod runs Chroma
-> as a private service. ADR-0002 makes the vector backend a config change, so when
-> pgvector lands: implement it in `app/vector/`, flip `vector_store.backend` to
-> `pgvector`, drop the `axiom-chroma` service from `render.yaml`, and point it at
-> the Neon `DATABASE_URL`. Until then, keep the Chroma service.
+Production sets `VECTOR_STORE_BACKEND=pgvector`; the app creates the `vector`
+extension and its namespaced vector table on first vector access. Local
+development keeps Chroma, so both ADR-0002 backends are exercised in Compose CI.
 
 ## Prerequisites
 
@@ -43,10 +39,10 @@ boots standalone — no bind mount. Tables are created on first startup
 
    Keep `sslmode=require` — Neon rejects plaintext. Hold this for step 2.
 
-## 2. Backend + vector store on Render
+## 2. Backend on Render
 
 1. **New → Blueprint**, pick this repo. Render reads [`render.yaml`](../render.yaml)
-   and proposes `axiom-backend` (web) and `axiom-chroma` (private service).
+   and proposes the `axiom-backend` web service.
 2. Set the backend's secret env vars (declared `sync: false`, so Render prompts):
    - `DATABASE_URL` → the Neon string from step 1.
    - `OPENAI_API_KEY` → your Gemini API key from Google AI Studio.
@@ -54,10 +50,11 @@ boots standalone — no bind mount. Tables are created on first startup
 
    `OPENAI_API_BASE` is already set by the blueprint to Google's
    OpenAI-compatible endpoint, matching the committed Gemini models.
-   `CHROMA_HOST`/`CHROMA_PORT` wire to the Chroma service automatically; budget
-   caps and `ENABLE_HSTS=true` also come from the blueprint.
-3. **Apply**. Render builds the image (baking `config.yaml`), starts Chroma with a
-   1 GB persistent disk, and gates the backend on `GET /health`.
+   `VECTOR_STORE_BACKEND=pgvector`, budget caps, and `ENABLE_HSTS=true` come
+   from the blueprint.
+3. **Apply**. Render builds the image (baking `config.yaml`) and gates the
+   backend on `GET /health`. The first ingestion enables pgvector in Neon and
+   creates the vector table.
 4. Copy the backend URL, e.g. `https://axiom-backend.onrender.com`.
 
 Verify:
@@ -80,22 +77,17 @@ Expect `200` with `{"status":"ok","service":"Axiom","environment":"prod",...}`.
 
 ## 4. Allow the frontend origin (CORS)
 
-CORS origins live in [`config.yaml`](../config.yaml) (`app.cors_origins`) and are
-baked into the backend image, so the browser origin must be added and the backend
-redeployed:
+On the Render backend, add the environment variable `CORS_ORIGINS` with the
+exact Vercel origin (no path), for example:
 
-1. Add the Vercel origin to `app.cors_origins` in `config.yaml`:
+```text
+https://axiom.vercel.app
+```
 
-   ```yaml
-   app:
-     cors_origins:
-       - http://localhost:5173
-       - http://127.0.0.1:5173
-       - https://axiom.vercel.app   # prod frontend
-   ```
-
-2. Commit (config change → commit the doc-of-record together, per Rules.md §2) and
-   redeploy `axiom-backend` on Render (**Manual Deploy → Deploy latest commit**).
+Use a comma-separated list if the app has more than one stable browser origin.
+Save the variable and let Render redeploy the backend. This deployment-specific
+override is validated at startup and avoids a source-code commit just to connect
+the frontend. Blank/unset keeps the local origins from `config.yaml`.
 
 ## 5. Smoke test (the Definition of Done, live)
 
@@ -112,9 +104,9 @@ blocker (EVAL.md §4): re-run `pytest backend/evals/` before shipping further.
 
 ## Operational notes
 
-- **Chroma network isolation.** The Compose ports bind to `127.0.0.1`, and the
-  Render Chroma service is private. Keep it that way: the Chroma Python package
-  is used only as an HTTP client to the native Rust server image. The current
+- **Chroma network isolation.** Chroma is local-development only and its Compose
+  port binds to `127.0.0.1`. Keep it that way: the Chroma Python package is used
+  only as an HTTP client to the native Rust server image. The current
   `PYSEC-2026-311` and `PYSEC-2026-3813` through `PYSEC-2026-3815` advisories
   affect Chroma's Python FastAPI server and have no patched PyPI release. Do not
   replace the native image with the Python server or publish port 8000. The CI
@@ -124,6 +116,12 @@ blocker (EVAL.md §4): re-run `pytest backend/evals/` before shipping further.
   already write DiskCache's local cache directory; Axiom does not expose that
   directory. `PYSEC-2026-3740` affects NLTK model-artifact APIs that Axiom does
   not call, and the installed NLTK 3.10.3 is the advisory's fixed version.
+- **Production image audit (2026-09-22).** The default Docker stage excludes
+  Chroma and Docker Scout reports zero critical findings. Its three remaining
+  high findings (`CVE-2026-81726` in transitive NLTK and `CVE-2026-85091` /
+  `CVE-2026-82560` in base-image zlib / Perl) have no fixed release. Axiom does
+  not call NLTK's download or archive-extraction APIs. Rebuild and re-audit the
+  image regularly, and upgrade as soon as fixes are published.
 - **Budget guard (Rule 8).** `MAX_REQUEST_TOKENS` / `DAILY_TOKEN_CAP` /
   `MONTHLY_SPEND_USD` on the Render service cap spend; exceeding one returns
   `429 BUDGET_EXCEEDED`, never a silent bill. Raise them deliberately.
@@ -146,5 +144,5 @@ blocker (EVAL.md §4): re-run `pytest backend/evals/` before shipping further.
 
 ## Teardown
 
-Delete the Render Blueprint (removes both services and the Chroma disk), delete
-the Vercel project, and delete the Neon project. Nothing else persists.
+Delete the Render Blueprint, the Vercel project, and the Neon project. Nothing
+else persists.

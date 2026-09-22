@@ -26,8 +26,6 @@ dependencies = [
   # layer) — model names outside OpenAI's catalog need the OpenAILike classes.
   "llama-index-embeddings-openai-like>=0.4,<0.5",
   "llama-index-llms-openai-like>=0.8,<0.9",
-  "llama-index-vector-stores-chroma>=0.6,<0.7",
-  "chromadb>=1.5,<2.0",                  # client; server pinned in docker-compose
   "tiktoken>=0.8,<1.0",                  # token-based chunking (512/64)
   # ─── Parsing (Architecture.md §3.1) ─────────────────────────────────────────
   "pypdf>=5.1,<7.0",                     # PDF text extraction
@@ -37,7 +35,16 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Chroma is the local-development vector store. Production uses pgvector and
+# deliberately omits this extra (and the vulnerable Chroma server dependency).
+chroma = [
+  "llama-index-vector-stores-chroma>=0.6,<0.7",
+  "chromadb>=1.5,<2.0",                  # client; server pinned in docker-compose
+]
 dev = [
+  # Keep the README/CI `pip install -e ".[dev]"` workflow self-contained.
+  "llama-index-vector-stores-chroma>=0.6,<0.7",
+  "chromadb>=1.5,<2.0",
   "ruff>=0.7,<1.0",
   "mypy>=1.13,<2.0",
   "bandit>=1.9,<2.0",

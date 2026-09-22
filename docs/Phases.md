@@ -64,10 +64,13 @@
 - [x] Golden dataset: 30-50 Q&A pairs over test corpus (include adversarial/out-of-corpus questions)
 - [x] RAGAS harness: faithfulness + answer relevancy + citation precision
 - [x] Threshold tuning from eval results; record before/after numbers for README
-- [ ] Latency validation under load (P95 < 15s full answer)
+- [x] Latency load-test harness with a P95 < 15s gate
+- [ ] Run the latency gate against the live deployment and record the result
 - [x] Rate limiting + error handling sweep
-- [ ] Dockerize, deploy (Render + Vercel + Neon)
-- [ ] README: architecture diagram, eval table, demo GIF/video
+- [x] Dockerize + deployment configs (Render + Vercel + Neon)
+- [ ] Deploy the public app and record its URL
+- [x] README: architecture diagram + offline eval table
+- [ ] README: demo GIF/video
 
 **Exit:** Live public URL, eval table in README, repo link on the resume.
 
@@ -80,6 +83,9 @@
 3. Faithfulness >= 0.85 on golden set
 4. Demo video < 90s: upload -> grounded answer -> flagged low-confidence -> web fallback
 5. README a stranger can follow in < 10 minutes
+
+The remaining human/account-dependent steps are ordered in
+[`RELEASE_CHECKLIST.md`](RELEASE_CHECKLIST.md).
 
 ## Post-v1 Wishlist (do NOT start until v1 ships)
 

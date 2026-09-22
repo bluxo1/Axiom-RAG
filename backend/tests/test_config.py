@@ -168,6 +168,64 @@ def test_dotenv_resolves_from_the_repository_root() -> None:
 # ─── Environment overrides (Prompt.md Rule 8, Design.md §6) ───────────────────
 
 
+def test_env_overrides_cors_origins(knobs: Knobs, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A deployed frontend origin must not require editing committed config."""
+    monkeypatch.setenv("CORS_ORIGINS", "https://axiom.vercel.app/, https://www.axiom.example")
+
+    config = AxiomConfig(Settings(_env_file=None), knobs)
+
+    assert config.app.cors_origins == (
+        "https://axiom.vercel.app",
+        "https://www.axiom.example",
+    )
+
+
+def test_blank_cors_origins_fall_back_to_yaml(
+    knobs: Knobs, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("CORS_ORIGINS", "")
+
+    config = AxiomConfig(Settings(_env_file=None), knobs)
+
+    assert config.app.cors_origins == knobs.app.cors_origins
+
+
+@pytest.mark.parametrize(
+    "origin",
+    [
+        "https://axiom.example/not-an-origin",
+        "https://*.axiom.example",
+        "https://user:password@axiom.example",
+        "https://axiom.example:invalid",
+    ],
+)
+def test_invalid_cors_origin_is_rejected(
+    knobs: Knobs, monkeypatch: pytest.MonkeyPatch, origin: str
+) -> None:
+    monkeypatch.setenv("CORS_ORIGINS", origin)
+
+    with pytest.raises(ValueError, match="invalid CORS origin"):
+        AxiomConfig(Settings(_env_file=None), knobs)
+
+
+def test_env_selects_pgvector_for_production(knobs: Knobs, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("VECTOR_STORE_BACKEND", "pgvector")
+
+    config = AxiomConfig(Settings(_env_file=None), knobs)
+
+    assert config.vector_store.backend == "pgvector"
+
+
+def test_blank_vector_backend_falls_back_to_yaml(
+    knobs: Knobs, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("VECTOR_STORE_BACKEND", "")
+
+    config = AxiomConfig(Settings(_env_file=None), knobs)
+
+    assert config.vector_store.backend == knobs.vector_store.backend
+
+
 def test_budget_defaults_come_from_yaml(knobs: Knobs) -> None:
     config = AxiomConfig(Settings(_env_file=None), knobs)
 

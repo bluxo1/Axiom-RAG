@@ -9,7 +9,7 @@
 # a PaaS (Render) with no bind mount. In dev, compose still mounts config.yaml
 # read-only over the baked copy so knob edits take effect without a rebuild.
 
-FROM python:3.11-slim AS base
+FROM python:3.11-slim AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -33,8 +33,16 @@ ENV CONFIG_PATH=/srv/axiom/config.yaml
 RUN mkdir -p /srv/axiom/data \
     && useradd --create-home --uid 10001 axiom \
     && chown -R axiom:axiom /srv/axiom
-USER axiom
-
 EXPOSE 8000
 
+# Compose targets this stage so local development retains the Chroma client.
+FROM runtime AS development
+RUN pip install ".[chroma]"
+USER axiom
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+# The final/default stage is what Render builds. Production selects pgvector,
+# so no Chroma package (or its vulnerable server dependency tree) is installed.
+FROM runtime AS production
+USER axiom
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

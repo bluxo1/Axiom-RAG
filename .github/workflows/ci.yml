@@ -106,6 +106,14 @@ jobs:
       - name: Boot the stack and wait for health
         run: docker compose up --build --wait --wait-timeout 180
 
+      # Render builds the Dockerfile's default/final production stage. Keep the
+      # vulnerable, local-only Chroma dependency out of that shipped image.
+      - name: Prove production image excludes Chroma
+        run: |
+          docker build --target production -t axiom-backend-production -f backend/Dockerfile .
+          docker run --rm --entrypoint python axiom-backend-production -c \
+            "import importlib.util; assert importlib.util.find_spec('chromadb') is None"
+
       # chroma has no container healthcheck (image >= 1.5.7 ships without curl,
       # chroma-core/chroma#6855), so reachability is proven from a real client:
       # the backend container requests the heartbeat over the compose network.
@@ -117,6 +125,57 @@ jobs:
           with urllib.request.urlopen("http://chroma:8000/api/v2/heartbeat", timeout=5) as r:
               assert r.status == 200, f"chroma heartbeat returned {r.status}"
           print("chroma heartbeat: 200")
+          PY
+
+      # ADR-0002: dev uses Chroma, but production uses pgvector in Neon. Exercise
+      # the exact production store contract against the Compose Postgres service.
+      - name: Prove pgvector add, query, and delete
+        run: |
+          docker compose exec -T backend python - <<'PY'
+          from uuid import uuid4
+
+          from app.config import get_config
+          from app.db.models import Document
+          from app.db.session import Database
+          from app.rag.types import TextChunk
+          from app.vector.store import PgVectorStore
+
+          config = get_config()
+          database = Database(config.settings.database_url)
+          database.create_all()
+          doc_a, doc_b = str(uuid4()), str(uuid4())
+          with database.session() as session:
+              session.add_all([
+                  Document(doc_id=doc_a, name="near.txt", status="ready"),
+                  Document(doc_id=doc_b, name="far.txt", status="ready"),
+              ])
+
+          store = PgVectorStore(
+              engine=database.engine,
+              collection_name="ci_pgvector_smoke",
+              dimensions=3,
+          )
+          store.add(
+              [
+                  TextChunk("near", doc_a, "near.txt", 0, "near", None),
+                  TextChunk("far", doc_b, "far.txt", 0, "far", None),
+              ],
+              [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+          )
+          assert [hit.chunk_id for hit in store.query([0.9, 0.1, 0.0], 2)] == [
+              "near",
+              "far",
+          ]
+          store.delete_document(doc_a)
+          assert [hit.chunk_id for hit in store.query([1.0, 0.0, 0.0], 10)] == ["far"]
+
+          with database.session() as session:
+              for doc_id in (doc_a, doc_b):
+                  document = session.get(Document, doc_id)
+                  if document is not None:
+                      session.delete(document)
+          database.dispose()
+          print("pgvector add/query/delete: ok")
           PY
 
       - name: Assert /health returns 200

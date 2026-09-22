@@ -1,9 +1,9 @@
 """Vector store interface and backends (ADR-0002).
 
 `VectorStore` is what the pipeline depends on. `InMemoryVectorStore` is an exact
-cosine implementation used by tests. `ChromaVectorStore` talks to the Chroma
-server pinned in docker-compose; the client major is kept in step with that
-image.
+cosine implementation used by tests. `ChromaVectorStore` talks to the local
+Chroma server, while `PgVectorStore` uses the managed production Postgres from
+ADR-0002.
 
 Scores are cosine similarity in `[-1, 1]` (higher is better), normalized the
 same way across backends so `config.confidence` thresholds mean one thing.
@@ -14,6 +14,8 @@ from __future__ import annotations
 import math
 from collections.abc import Sequence
 from typing import Any, Protocol
+
+from sqlalchemy import Engine, text
 
 from app.rag.types import RetrievedChunk, TextChunk
 
@@ -136,6 +138,147 @@ class ChromaVectorStore:
 
     def delete_document(self, doc_id: str) -> None:
         self._collection.delete(where={"doc_id": doc_id})
+
+
+class PgVectorStore:
+    """Exact cosine search in PostgreSQL/pgvector (production, ADR-0002).
+
+    The table is shared across embedding models, with `collection_name` and
+    `dimensions` keeping incompatible vector spaces isolated. Exact search is
+    deliberate for the v1 corpus; an approximate index becomes useful only
+    when production evidence shows the table has outgrown exact scans.
+    """
+
+    def __init__(self, *, engine: Engine, collection_name: str, dimensions: int) -> None:
+        if engine.dialect.name != "postgresql":
+            raise ValueError("pgvector requires a PostgreSQL database")
+        self._engine = engine
+        self._collection_name = collection_name
+        self._dimensions = dimensions
+        self._ensure_schema()
+
+    def _ensure_schema(self) -> None:
+        with self._engine.begin() as connection:
+            connection.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+            connection.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS axiom_vectors (
+                        collection_name TEXT NOT NULL,
+                        chunk_id TEXT NOT NULL,
+                        doc_id VARCHAR(36) NOT NULL
+                            REFERENCES documents(doc_id) ON DELETE CASCADE,
+                        doc_name TEXT NOT NULL,
+                        page INTEGER,
+                        content TEXT NOT NULL,
+                        dimensions INTEGER NOT NULL CHECK (dimensions > 0),
+                        embedding vector NOT NULL,
+                        PRIMARY KEY (collection_name, chunk_id)
+                    )
+                    """
+                )
+            )
+
+    def add(self, chunks: Sequence[TextChunk], embeddings: Sequence[list[float]]) -> None:
+        if len(chunks) != len(embeddings):
+            raise ValueError("chunks and embeddings must be the same length")
+        if not chunks:
+            return
+        rows = [
+            {
+                "collection_name": self._collection_name,
+                "chunk_id": chunk.chunk_id,
+                "doc_id": chunk.doc_id,
+                "doc_name": chunk.doc_name,
+                "page": chunk.page,
+                "content": chunk.text,
+                "dimensions": self._dimensions,
+                "embedding": _vector_literal(embedding, dimensions=self._dimensions),
+            }
+            for chunk, embedding in zip(chunks, embeddings, strict=True)
+        ]
+        statement = text(
+            """
+            INSERT INTO axiom_vectors (
+                collection_name, chunk_id, doc_id, doc_name, page, content,
+                dimensions, embedding
+            ) VALUES (
+                :collection_name, :chunk_id, :doc_id, :doc_name, :page, :content,
+                :dimensions, CAST(:embedding AS vector)
+            )
+            ON CONFLICT (collection_name, chunk_id) DO UPDATE SET
+                doc_id = EXCLUDED.doc_id,
+                doc_name = EXCLUDED.doc_name,
+                page = EXCLUDED.page,
+                content = EXCLUDED.content,
+                dimensions = EXCLUDED.dimensions,
+                embedding = EXCLUDED.embedding
+            """
+        )
+        with self._engine.begin() as connection:
+            connection.execute(statement, rows)
+
+    def query(self, embedding: Sequence[float], k: int) -> list[RetrievedChunk]:
+        query_vector = _vector_literal(embedding, dimensions=self._dimensions)
+        statement = text(
+            """
+            SELECT
+                chunk_id,
+                doc_id,
+                doc_name,
+                content,
+                page,
+                1 - (embedding <=> CAST(:embedding AS vector)) AS score
+            FROM axiom_vectors
+            WHERE collection_name = :collection_name
+              AND dimensions = :dimensions
+            ORDER BY embedding <=> CAST(:embedding AS vector)
+            LIMIT :limit
+            """
+        )
+        with self._engine.connect() as connection:
+            rows = connection.execute(
+                statement,
+                {
+                    "embedding": query_vector,
+                    "collection_name": self._collection_name,
+                    "dimensions": self._dimensions,
+                    "limit": k,
+                },
+            ).mappings()
+            return [
+                RetrievedChunk(
+                    chunk_id=str(row["chunk_id"]),
+                    doc_id=str(row["doc_id"]),
+                    doc_name=str(row["doc_name"]),
+                    text=str(row["content"]),
+                    score=float(row["score"]),
+                    page=int(row["page"]) if row["page"] is not None else None,
+                )
+                for row in rows
+            ]
+
+    def delete_document(self, doc_id: str) -> None:
+        with self._engine.begin() as connection:
+            connection.execute(
+                text(
+                    """
+                    DELETE FROM axiom_vectors
+                    WHERE collection_name = :collection_name AND doc_id = :doc_id
+                    """
+                ),
+                {"collection_name": self._collection_name, "doc_id": doc_id},
+            )
+
+
+def _vector_literal(embedding: Sequence[float], *, dimensions: int) -> str:
+    """Validate and serialize an embedding for pgvector's text input format."""
+    if len(embedding) != dimensions:
+        raise ValueError(f"expected {dimensions} embedding dimensions, got {len(embedding)}")
+    values = [float(value) for value in embedding]
+    if not all(math.isfinite(value) for value in values):
+        raise ValueError("embedding values must be finite")
+    return "[" + ",".join(format(value, ".17g") for value in values) + "]"
 
 
 def _page_from(meta: dict[str, Any]) -> int | None:

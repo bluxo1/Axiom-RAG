@@ -21,6 +21,7 @@ import re
 from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Any, Literal, Self
+from urllib.parse import urlsplit
 
 import yaml
 from pydantic import (
@@ -76,6 +77,44 @@ class AppSection(StrictModel):
             raise ValueError("api_prefix must not end with '/'")
         return value
 
+    @field_validator("cors_origins")
+    @classmethod
+    def _check_cors_origins(cls, values: tuple[str, ...]) -> tuple[str, ...]:
+        """Require exact HTTP(S) origins; paths and wildcards are unsafe here."""
+        normalized: list[str] = []
+        for value in values:
+            origin = value.strip().rstrip("/")
+            parsed = urlsplit(origin)
+            try:
+                _ = parsed.port
+            except ValueError as exc:
+                raise ValueError(f"invalid CORS origin: {value!r}") from exc
+            if (
+                parsed.scheme not in {"http", "https"}
+                or not parsed.netloc
+                or parsed.hostname is None
+                or parsed.path
+                or parsed.query
+                or parsed.fragment
+                or parsed.username is not None
+                or parsed.password is not None
+                or "*" in origin
+                or any(character.isspace() for character in origin)
+            ):
+                raise ValueError(f"invalid CORS origin: {value!r}")
+            if origin not in normalized:
+                normalized.append(origin)
+        if not normalized:
+            raise ValueError("cors_origins must contain at least one origin")
+        return tuple(normalized)
+
+    def with_env_overrides(self, settings: Settings) -> AppSection:
+        """Apply the deployment-specific browser origins, when provided."""
+        if settings.cors_origins is None:
+            return self
+        origins = tuple(origin.strip() for origin in settings.cors_origins.split(","))
+        return AppSection.model_validate({**self.model_dump(), "cors_origins": origins})
+
 
 class ChunkingSection(StrictModel):
     """Recursive splitting parameters (Architecture.md §3.1)."""
@@ -125,6 +164,14 @@ class VectorStoreSection(StrictModel):
     backend: Literal["chroma", "pgvector"]
     similarity: Literal["cosine", "l2", "ip"]
     collection_prefix: str = Field(min_length=1)
+
+    def with_env_overrides(self, settings: Settings) -> VectorStoreSection:
+        """Select the deployment backend without changing dev's committed default."""
+        if settings.vector_store_backend is None:
+            return self
+        return VectorStoreSection.model_validate(
+            {**self.model_dump(), "backend": settings.vector_store_backend}
+        )
 
 
 class IngestionSection(StrictModel):
@@ -338,6 +385,13 @@ class Settings(BaseSettings):
     log_level: LogLevel = "INFO"
     config_path: Path = Path("config.yaml")
 
+    # Comma-separated exact browser origins for a deployment. Blank/unset keeps
+    # the local-development origins from config.yaml.
+    cors_origins: str | None = None
+    # Production uses pgvector in Neon; local development keeps Chroma from
+    # config.yaml. Blank/unset means the committed default.
+    vector_store_backend: Literal["chroma", "pgvector"] | None = None
+
     openai_api_key: SecretStr | None = None
     # OpenAI-compatible endpoint override (e.g. Google's Gemini compatibility
     # layer). Blank/unset means the real api.openai.com. See ADR-0003.
@@ -367,6 +421,8 @@ class Settings(BaseSettings):
         "groq_api_key",
         "tavily_api_key",
         "brave_api_key",
+        "cors_origins",
+        "vector_store_backend",
         "max_request_tokens",
         "daily_token_cap",
         "monthly_spend_usd",
@@ -387,11 +443,11 @@ class AxiomConfig:
 
     def __init__(self, settings: Settings, knobs: Knobs) -> None:
         self.settings = settings
-        self.app = knobs.app
+        self.app = knobs.app.with_env_overrides(settings)
         self.chunking = knobs.chunking
         self.ingestion = knobs.ingestion
         self.embedding = knobs.embedding
-        self.vector_store = knobs.vector_store
+        self.vector_store = knobs.vector_store.with_env_overrides(settings)
         self.retrieval = knobs.retrieval
         self.generation = knobs.generation
         self.grounding = knobs.grounding

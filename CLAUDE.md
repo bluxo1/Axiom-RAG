@@ -1,6 +1,6 @@
 # CLAUDE.md — instructions for Claude Code
 
-Project: **Axiom** — citation-grounded RAG agent ("Start from what you can prove"). Phase 0 (skeleton) is merged; implementation is in progress.
+Project: **Axiom** — citation-grounded RAG agent ("Start from what you can prove"). Phases 0-3 and the Phase 4 implementation are merged; the remaining v1 gates require live deployment/evaluation evidence and a demo recording (see `docs/RELEASE_CHECKLIST.md`).
 
 ## Read order (before writing any code)
 

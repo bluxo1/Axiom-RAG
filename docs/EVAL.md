@@ -9,13 +9,15 @@
 | Metric | Meaning | Target |
 |--------|---------|--------|
 | **Citation precision** | % of citations that actually support their claim | >= 95% |
-
-> **Note:** RAGAS ships faithfulness and answer relevancy out of the box, but **not** citation precision. Citation precision is a **custom scorer** implemented in `evals/` (built on the grounding verifier's support check) and reported alongside the RAGAS metrics.
 | **Faithfulness (RAGAS)** | Is the answer entailed by retrieved context? | >= 0.85 |
 | **Answer relevancy (RAGAS)** | Does the answer address the question? | >= 0.80 |
 | **Unsupported-claim escape rate** | Claims reaching the user without verified support | **0** |
 | **Fallback precision** | % of fallbacks that were truly necessary (manual review) | >= 90% |
 | **P95 latency** | 95th percentile time-to-full-answer | < 15s |
+
+> **Note:** RAGAS ships faithfulness and answer relevancy out of the box, but
+> **not** citation precision. Citation precision is a **custom scorer** in
+> `evals/`, built on the grounding verifier's support check.
 
 ## 2. Golden Dataset
 
@@ -33,8 +35,10 @@ Categories:
 ## 3. Running Evals
 
 ```bash
-pytest evals/ -v --run-llm   # live LLM eval (costs tokens)
+cd backend
+pip install -e ".[dev,eval]" # once; live-only dependencies are optional
 pytest evals/ -v             # recorded-fixture mode (CI default)
+pytest evals/ -v -s --run-llm # live scores printed; costs tokens
 ```
 
 The optional RAGAS extra is never installed in production or CI. Current
@@ -55,7 +59,8 @@ If any assertion fails, the build fails. This is the test that proves the taglin
 
 ## 5. Reporting
 
-Results written to `evals/reports/<date>.md`, summarized in README:
+Record release results in `evals/reports/<date>.md` and summarize them in the
+README:
 
 | Date | Faithfulness | Citation precision | Escape rate |
 |------|-------------|--------------------|-------------|

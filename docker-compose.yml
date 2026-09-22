@@ -13,7 +13,9 @@ name: axiom
 
 services:
   postgres:
-    image: postgres:16-alpine
+    # Includes the vector extension for the production-backend smoke test while
+    # local application traffic continues to use Chroma by default (ADR-0002).
+    image: pgvector/pgvector:0.8.6-pg16-bookworm
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-axiom}
@@ -59,6 +61,7 @@ services:
       # mount below still overrides it with the live file in dev.
       context: .
       dockerfile: backend/Dockerfile
+      target: development
     restart: unless-stopped
     # Secrets and per-developer overrides. Run `cp .env.example .env` first.
     env_file:
