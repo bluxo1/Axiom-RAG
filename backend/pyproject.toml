@@ -132,6 +132,8 @@ module = [
   "ragas",
   "ragas.*",
   "datasets",
+  "langchain_openai",
+  "langchain_openai.*",
 ]
 follow_imports = "skip"
 follow_imports_for_stubs = true
