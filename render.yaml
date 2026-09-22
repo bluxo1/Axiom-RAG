@@ -64,6 +64,12 @@ services:
         value: "200000"
       - key: MONTHLY_SPEND_USD
         value: "10.0"
+      # Rate limiting (Phase 4 hardening sweep) — tighter than the generous
+      # dev defaults in config.yaml: burst 10, one request per 2s sustained.
+      - key: RATE_LIMIT_CAPACITY
+        value: "10"
+      - key: RATE_LIMIT_REFILL_PER_SECOND
+        value: "0.5"
 
   # ─── Vector store: pinned ChromaDB (ADR-0002 dev backend, prod until pgvector)
   - type: pserv

@@ -244,7 +244,9 @@ class BudgetSection(StrictModel):
 class RateLimitSection(StrictModel):
     """Per-session token bucket (PRD.md §8 security, Design.md §6).
 
-    Dev is generous; the Phase 4 hardening sweep tightens prod.
+    YAML defaults are generous so local dev is not annoying; prod tightens
+    them via `RATE_LIMIT_CAPACITY` / `RATE_LIMIT_REFILL_PER_SECOND` (render.yaml),
+    the same override pattern the budget caps use (Prompt.md Rule 8).
     """
 
     enabled: bool
@@ -252,6 +254,20 @@ class RateLimitSection(StrictModel):
     refill_per_second: PositiveFloat
     exempt_paths: tuple[str, ...]
     max_tracked_identities: PositiveInt
+
+    def with_env_overrides(self, settings: Settings) -> RateLimitSection:
+        """Return a copy with any environment-provided limit applied."""
+        overrides: dict[str, float] = {}
+        if settings.rate_limit_capacity is not None:
+            overrides["capacity"] = settings.rate_limit_capacity
+        if settings.rate_limit_refill_per_second is not None:
+            overrides["refill_per_second"] = settings.rate_limit_refill_per_second
+        if not overrides:
+            return self
+        # Re-validate rather than model_copy: an env var must clear the same
+        # bar as a committed value (e.g. RATE_LIMIT_CAPACITY=0 is a DoS, not a
+        # limit).
+        return RateLimitSection.model_validate({**self.model_dump(), **overrides})
 
 
 class CacheSection(StrictModel):
@@ -327,6 +343,8 @@ class Settings(BaseSettings):
     max_request_tokens: int | None = None
     daily_token_cap: int | None = None
     monthly_spend_usd: float | None = None
+    rate_limit_capacity: float | None = None
+    rate_limit_refill_per_second: float | None = None
 
     _blank_is_unset = field_validator(
         "openai_api_key",
@@ -336,6 +354,8 @@ class Settings(BaseSettings):
         "max_request_tokens",
         "daily_token_cap",
         "monthly_spend_usd",
+        "rate_limit_capacity",
+        "rate_limit_refill_per_second",
         mode="before",
     )(_blank_to_none)
 
@@ -362,7 +382,7 @@ class AxiomConfig:
         self.confidence = knobs.confidence
         self.fallback = knobs.fallback
         self.budget = knobs.budget.with_env_overrides(settings)
-        self.rate_limit = knobs.rate_limit
+        self.rate_limit = knobs.rate_limit.with_env_overrides(settings)
         self.cache = knobs.cache
 
     @property

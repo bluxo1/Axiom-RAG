@@ -183,6 +183,40 @@ def test_env_overrides_budget_caps(knobs: Knobs, monkeypatch: pytest.MonkeyPatch
     assert config.budget.monthly_spend_usd == 1.25
 
 
+def test_env_overrides_rate_limits(knobs: Knobs, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Phase 4 hardening: prod tightens limits without editing committed config."""
+    monkeypatch.setenv("RATE_LIMIT_CAPACITY", "10")
+    monkeypatch.setenv("RATE_LIMIT_REFILL_PER_SECOND", "0.5")
+
+    config = AxiomConfig(Settings(), knobs)
+
+    assert config.rate_limit.capacity == 10.0
+    assert config.rate_limit.refill_per_second == 0.5
+
+
+def test_blank_rate_limit_env_falls_back_to_yaml(
+    knobs: Knobs, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Blank (`.env.example` default) means "use the generous dev values"."""
+    monkeypatch.setenv("RATE_LIMIT_CAPACITY", "")
+    monkeypatch.setenv("RATE_LIMIT_REFILL_PER_SECOND", "")
+
+    config = AxiomConfig(Settings(), knobs)
+
+    assert config.rate_limit.capacity == knobs.rate_limit.capacity
+    assert config.rate_limit.refill_per_second == knobs.rate_limit.refill_per_second
+
+
+def test_invalid_rate_limit_override_is_rejected(
+    knobs: Knobs, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An env var must clear the same bar as a committed value."""
+    monkeypatch.setenv("RATE_LIMIT_CAPACITY", "0")
+
+    with pytest.raises(ValueError, match="capacity"):
+        AxiomConfig(Settings(), knobs)
+
+
 def test_blank_env_var_falls_back_to_yaml(knobs: Knobs, monkeypatch: pytest.MonkeyPatch) -> None:
     """`.env.example` ships blank keys; blank must mean "not configured"."""
     monkeypatch.setenv("MAX_REQUEST_TOKENS", "")
