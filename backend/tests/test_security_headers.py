@@ -33,7 +33,7 @@ def test_hsts_is_absent_by_default(client: TestClient) -> None:
 
 def test_hsts_is_emitted_when_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("ENABLE_HSTS", "true")
-    config = AxiomConfig(Settings(), load_knobs(CONFIG_PATH))
+    config = AxiomConfig(Settings(_env_file=None), load_knobs(CONFIG_PATH))
     assert config.settings.enable_hsts is True
 
     runtime: Runtime = make_runtime(config)

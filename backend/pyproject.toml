@@ -20,8 +20,12 @@ dependencies = [
   "psycopg[binary]>=3.2,<4.0",           # DATABASE_URL uses postgresql+psycopg://
   # ─── RAG glue (Architecture.md §5: LlamaIndex for ingestion + retrieval) ─────
   "llama-index-core>=0.14,<0.15",
-  "llama-index-embeddings-openai>=0.7,<0.8",
-  "llama-index-llms-openai>=0.8,<0.9",
+  "llama-index-embeddings-openai>=0.6,<0.8",
+  "llama-index-llms-openai>=0.7,<0.9",
+  # ADR-0003: OpenAI-compatible endpoints (e.g. Google's Gemini compatibility
+  # layer) — model names outside OpenAI's catalog need the OpenAILike classes.
+  "llama-index-embeddings-openai-like>=0.4,<0.5",
+  "llama-index-llms-openai-like>=0.8,<0.9",
   "llama-index-vector-stores-chroma>=0.6,<0.7",
   "chromadb>=1.5,<2.0",                  # client; server pinned in docker-compose
   "tiktoken>=0.8,<1.0",                  # token-based chunking (512/64)
@@ -36,7 +40,10 @@ dependencies = [
 dev = [
   "ruff>=0.7,<1.0",
   "mypy>=1.13,<2.0",
-  "pytest>=8.3,<9.0",
+  "bandit>=1.9,<2.0",
+  "pip-audit>=2.10,<3.0",
+  # 9.0.3 fixes PYSEC-2026-1845 (unsafe shared tmpdir handling on Unix).
+  "pytest>=9.0.3,<10.0",
   # `starlette.testclient` imports `httpx2` and warns (deprecation) if it has to
   # fall back to `httpx`. `filterwarnings = ["error"]` turns that warning into a
   # collection failure, so the test client's own preferred package is pinned.

@@ -31,7 +31,7 @@ ingestion:
 # so incompatible vectors can never mix.
 embedding:
   provider: openai # openai | sentence-transformers
-  model: text-embedding-3-small
+  model: gemini-embedding-001 # ADR-0003: via the OpenAI-compatible endpoint
   dimensions: 1536
   batch_size: 64
   # Rule 8 spend accounting: estimated USD per 1M tokens (list price), used by
@@ -57,7 +57,7 @@ retrieval:
 # `llm/provider.py` (Rules.md §2).
 generation:
   provider: openai # openai | groq
-  model: gpt-4o-mini
+  model: gemini-3.6-flash # ADR-0003: via the OpenAI-compatible endpoint
   temperature: 0.0
   timeout_seconds: 30
   # Design.md §5 — malformed LLM JSON gets one auto-repair pass, then 502.

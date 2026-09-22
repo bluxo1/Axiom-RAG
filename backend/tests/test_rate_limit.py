@@ -160,7 +160,7 @@ TIGHT_LIMIT = RateLimitSection(
 
 
 def _app_with_limit(knobs: Knobs, section: RateLimitSection) -> FastAPI:
-    config = AxiomConfig(Settings(), knobs.model_copy(update={"rate_limit": section}))
+    config = AxiomConfig(Settings(_env_file=None), knobs.model_copy(update={"rate_limit": section}))
     return create_app(config, runtime=make_runtime(config))
 
 

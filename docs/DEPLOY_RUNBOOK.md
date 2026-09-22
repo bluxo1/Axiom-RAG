@@ -27,7 +27,9 @@ boots standalone — no bind mount. Tables are created on first startup
 
 - GitHub repo connected to Render and Vercel.
 - Accounts: [Render](https://render.com), [Vercel](https://vercel.com), [Neon](https://neon.tech).
-- API keys: `OPENAI_API_KEY` (embeddings + generation), `TAVILY_API_KEY` (web fallback).
+- API keys: a Gemini API key from Google AI Studio (stored as
+  `OPENAI_API_KEY` for the OpenAI-compatible client) and `TAVILY_API_KEY`
+  (web fallback).
 
 ## 1. Postgres on Neon
 
@@ -47,10 +49,13 @@ boots standalone — no bind mount. Tables are created on first startup
    and proposes `axiom-backend` (web) and `axiom-chroma` (private service).
 2. Set the backend's secret env vars (declared `sync: false`, so Render prompts):
    - `DATABASE_URL` → the Neon string from step 1.
-   - `OPENAI_API_KEY`, `TAVILY_API_KEY` → your keys.
+   - `OPENAI_API_KEY` → your Gemini API key from Google AI Studio.
+   - `TAVILY_API_KEY` → your Tavily key.
 
+   `OPENAI_API_BASE` is already set by the blueprint to Google's
+   OpenAI-compatible endpoint, matching the committed Gemini models.
    `CHROMA_HOST`/`CHROMA_PORT` wire to the Chroma service automatically; budget
-   caps and `ENABLE_HSTS=true` come from the blueprint.
+   caps and `ENABLE_HSTS=true` also come from the blueprint.
 3. **Apply**. Render builds the image (baking `config.yaml`), starts Chroma with a
    1 GB persistent disk, and gates the backend on `GET /health`.
 4. Copy the backend URL, e.g. `https://axiom-backend.onrender.com`.
@@ -107,6 +112,18 @@ blocker (EVAL.md §4): re-run `pytest backend/evals/` before shipping further.
 
 ## Operational notes
 
+- **Chroma network isolation.** The Compose ports bind to `127.0.0.1`, and the
+  Render Chroma service is private. Keep it that way: the Chroma Python package
+  is used only as an HTTP client to the native Rust server image. The current
+  `PYSEC-2026-311` and `PYSEC-2026-3813` through `PYSEC-2026-3815` advisories
+  affect Chroma's Python FastAPI server and have no patched PyPI release. Do not
+  replace the native image with the Python server or publish port 8000. The CI
+  audit documents these scoped exceptions and still fails on any new advisory.
+  Upgrade promptly when Chroma ships a fixed release.
+- **Transitive audit scope.** `PYSEC-2026-2447` requires an attacker who can
+  already write DiskCache's local cache directory; Axiom does not expose that
+  directory. `PYSEC-2026-3740` affects NLTK model-artifact APIs that Axiom does
+  not call, and the installed NLTK 3.10.3 is the advisory's fixed version.
 - **Budget guard (Rule 8).** `MAX_REQUEST_TOKENS` / `DAILY_TOKEN_CAP` /
   `MONTHLY_SPEND_USD` on the Render service cap spend; exceeding one returns
   `429 BUDGET_EXCEEDED`, never a silent bill. Raise them deliberately.

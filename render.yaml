@@ -42,13 +42,15 @@ services:
       # dialect: postgresql+psycopg://USER:PASSWORD@HOST/DB?sslmode=require
       - key: DATABASE_URL
         sync: false
+      # Gemini API key from Google AI Studio. The compatibility variable name is
+      # shared by every OpenAI-protocol client in the backend (ADR-0003).
       - key: OPENAI_API_KEY
         sync: false
-      # OpenAI-compatible endpoint override (ADR-0003). Set in the dashboard to
-      # point the backend at e.g. Google's Gemini compatibility layer; unset =
-      # the real api.openai.com.
+      # This endpoint must match the committed Gemini model names in config.yaml.
+      # Keep it env-controlled so an OpenAI deployment can override it while
+      # restoring OpenAI-supported model names.
       - key: OPENAI_API_BASE
-        sync: false
+        value: https://generativelanguage.googleapis.com/v1beta/openai/
       - key: TAVILY_API_KEY
         sync: false
       # Vector store: reach the Chroma private service over Render's network.

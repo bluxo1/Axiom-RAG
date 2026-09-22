@@ -34,6 +34,7 @@ def test_api_base_flows_into_runtime_builders(knobs: Knobs) -> None:
     base = "https://generativelanguage.googleapis.com/v1beta/openai/"
     cfg = AxiomConfig(
         Settings(
+            _env_file=None,
             openai_api_key=SecretStr("test-key"),
             openai_api_base=base,
         ),
@@ -181,7 +182,12 @@ def test_unreachable_vector_store_returns_structured_503(knobs: Knobs) -> None:
     refused localhost connection.
     """
     cfg = AxiomConfig(
-        Settings(openai_api_key=SecretStr("test-key"), chroma_host="127.0.0.1", chroma_port=1),
+        Settings(
+            _env_file=None,
+            openai_api_key=SecretStr("test-key"),
+            chroma_host="127.0.0.1",
+            chroma_port=1,
+        ),
         knobs,
     )
     database = Database(TEST_DATABASE_URL)

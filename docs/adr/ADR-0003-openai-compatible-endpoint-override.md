@@ -13,8 +13,9 @@ API offers a free tier with an **OpenAI-compatible endpoint**
 (`https://generativelanguage.googleapis.com/v1beta/openai/`) that speaks the
 same `/chat/completions` and `/embeddings` protocol.
 
-Meanwhile the only OpenAI entry points in the codebase are two LlamaIndex
-clients (`OpenAILLM`, `OpenAIEmbedder`), both of which accept an `api_base`.
+Meanwhile the only OpenAI-protocol entry points in the codebase are the two
+LlamaIndex-backed provider adapters (`OpenAILLM`, `OpenAIEmbedder`). They select
+the OpenAI-like clients when an `api_base` override is configured.
 
 ## Decision
 
@@ -28,6 +29,9 @@ clients (`OpenAILLM`, `OpenAIEmbedder`), both of which accept an `api_base`.
    the OpenAI protocol is served from. Switching to Gemini therefore also edits
    `config.yaml`'s model names to a Gemini-supported slug (e.g.
    `gemini-2.0-flash`, `text-embedding-004`).
+   The committed Gemini model names make Google's compatibility endpoint the
+   documented default in `.env.example` and `render.yaml`; an operator can still
+   override or clear it per environment.
 4. Collection namespacing (ADR-0001) keeps incompatible embedding vectors
    apart automatically: the effective collection is
    `{prefix}_{embedding.model slug}`, so an endpoint/model switch forces a
@@ -51,7 +55,9 @@ clients (`OpenAILLM`, `OpenAIEmbedder`), both of which accept an `api_base`.
 ## Alternatives considered
 
 - **OpenAI debit-card top-up** — blocked on author's payment access at the
-  time; remains the production default (`OPENAI_API_BASE` unset).
+  time. Returning to OpenAI remains supported by clearing `OPENAI_API_BASE` and
+  restoring OpenAI-supported model names, but it is not the checked-in deploy
+  default while `config.yaml` selects Gemini models.
 - **Groq provider** (already in `GenerationSection`) — free tier exists but
   covers generation only, not embeddings, and would need a second provider
   branch in `Runtime`.

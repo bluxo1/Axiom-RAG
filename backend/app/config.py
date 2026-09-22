@@ -310,11 +310,23 @@ def _blank_to_none(value: Any) -> Any:  # noqa: ANN401 - pre-validation hook
     return value
 
 
+def _repo_root() -> Path:
+    """Repository root, derived from this file's location.
+
+    `backend/app/config.py` -> `backend/app` -> `backend` -> repo root.
+    """
+    return Path(__file__).resolve().parents[2]
+
+
 class Settings(BaseSettings):
     """Environment-provided secrets, endpoints, and budget overrides."""
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        # README starts the API from `backend/`, while the one supported .env
+        # lives at the repository root. Resolve it from this module rather than
+        # the process CWD so both `uvicorn` and root-level tooling load the same
+        # deployment settings.
+        env_file=_repo_root() / ".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
         # `.env` also carries POSTGRES_* and VITE_* for compose and the browser;
@@ -393,14 +405,6 @@ class AxiomConfig:
     def collection_name(self) -> str:
         """Vector-store collection for the active embedding model (ADR-0001)."""
         return f"{self.vector_store.collection_prefix}_{self.embedding.slug}"
-
-
-def _repo_root() -> Path:
-    """Repository root, derived from this file's location.
-
-    `backend/app/config.py` -> `backend/app` -> `backend` -> repo root.
-    """
-    return Path(__file__).resolve().parents[2]
 
 
 def resolve_config_path(config_path: Path) -> Path:

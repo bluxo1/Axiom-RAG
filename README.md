@@ -158,8 +158,11 @@ The in-corpus score floor is 0.905; a 0.15 noise buffer below it lands `high` at
 
 ## API (v1)
 
-Base URL `/api/v1`. Ingestion, retrieval, and chat need an `OPENAI_API_KEY`
-(embeddings + generation); without one they return a structured `503`.
+Base URL `/api/v1`. Ingestion, retrieval, and chat need the configured
+OpenAI-protocol provider key in `OPENAI_API_KEY` (the checked-in Gemini setup
+uses a Gemini API key and the `OPENAI_API_BASE` from `.env.example`). The key
+covers embeddings and generation; without it those operations return a
+structured `503`.
 
 | Method | Path | Purpose |
 |--------|------|---------|

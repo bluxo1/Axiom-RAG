@@ -37,8 +37,11 @@ def knobs() -> Knobs:
 
 
 @pytest.fixture(scope="session")
-def config(knobs: Knobs) -> AxiomConfig:
-    return AxiomConfig(Settings(), knobs)
+def config(knobs: Knobs, run_llm: bool) -> AxiomConfig:
+    # Offline evals must be hermetic; the explicit live-eval opt-in loads the
+    # repository .env so its provider credentials and endpoint are available.
+    settings = Settings() if run_llm else Settings(_env_file=None)
+    return AxiomConfig(settings, knobs)
 
 
 @pytest.fixture(scope="session")
