@@ -8,6 +8,7 @@ so refill is deterministic) and the middleware's HTTP behaviour — a structured
 from __future__ import annotations
 
 from collections.abc import Iterator
+from types import SimpleNamespace
 
 import pytest
 from fastapi import FastAPI
@@ -15,7 +16,7 @@ from fastapi.testclient import TestClient
 from starlette.requests import Request
 
 from app.config import AxiomConfig, Knobs, RateLimitSection, Settings
-from app.core.rate_limit import SESSION_HEADER, TokenBucketLimiter, default_identity
+from app.core.rate_limit import TokenBucketLimiter, default_identity
 from app.main import create_app
 from tests.helpers import make_runtime
 
@@ -93,7 +94,7 @@ def test_identities_have_separate_budgets() -> None:
 
 
 def test_bucket_store_stays_bounded() -> None:
-    """An unbounded identity map is a memory leak on a public endpoint."""
+    """Unseen clients share overflow capacity instead of evicting prior buckets."""
     clock = FakeClock()
     limiter = TokenBucketLimiter(capacity=1, refill_per_second=1.0, max_identities=20, clock=clock)
 
@@ -102,6 +103,17 @@ def test_bucket_store_stays_bounded() -> None:
         limiter.check(f"identity-{index}")
 
     assert limiter.tracked_identities <= 20
+    assert limiter.check("a-new-identity").allowed is False
+
+
+def test_overflow_bucket_is_bounded_when_limit_is_one() -> None:
+    limiter = TokenBucketLimiter(
+        capacity=1, refill_per_second=1.0, max_identities=1, clock=FakeClock()
+    )
+
+    assert limiter.check("first").allowed is True
+    assert limiter.check("second").allowed is False
+    assert limiter.tracked_identities == 1
 
 
 @pytest.mark.parametrize(
@@ -118,16 +130,16 @@ def test_invalid_limiter_parameters_are_rejected(
 # ─── Identity ─────────────────────────────────────────────────────────────────
 
 
-def test_session_header_becomes_the_identity() -> None:
+def test_caller_supplied_session_header_does_not_change_identity() -> None:
     scope = {
         "type": "http",
         "method": "GET",
         "path": "/",
-        "headers": [(SESSION_HEADER.lower().encode(), b"s-1")],
+        "headers": [(b"x-session-id", b"s-1")],
         "client": ("10.0.0.1", 1234),
     }
 
-    assert default_identity(Request(scope)) == "session:s-1"
+    assert default_identity(Request(scope)) == "ip:10.0.0.1"
 
 
 def test_client_address_is_the_fallback_identity() -> None:
@@ -137,6 +149,54 @@ def test_client_address_is_the_fallback_identity() -> None:
         "path": "/",
         "headers": [],
         "client": ("10.0.0.1", 1234),
+    }
+
+    assert default_identity(Request(scope)) == "ip:10.0.0.1"
+
+
+def test_forwarded_headers_are_ignored_outside_production() -> None:
+    scope = {
+        "type": "http",
+        "method": "GET",
+        "path": "/",
+        "headers": [
+            (b"cf-connecting-ip", b"198.51.100.8"),
+            (b"x-forwarded-for", b"203.0.113.9"),
+        ],
+        "client": ("10.0.0.1", 1234),
+    }
+
+    assert default_identity(Request(scope)) == "ip:10.0.0.1"
+
+
+def test_production_identity_uses_valid_cloudflare_client_ip() -> None:
+    config = SimpleNamespace(settings=SimpleNamespace(axiom_env="prod"))
+    app = SimpleNamespace(state=SimpleNamespace(config=config))
+    scope = {
+        "type": "http",
+        "method": "GET",
+        "path": "/",
+        "headers": [
+            (b"cf-connecting-ip", b"2001:db8::123"),
+            (b"x-forwarded-for", b"198.51.100.8"),
+        ],
+        "client": ("10.0.0.1", 1234),
+        "app": app,
+    }
+
+    assert default_identity(Request(scope)) == "ip:2001:db8::123"
+
+
+def test_invalid_production_proxy_header_falls_back_to_peer() -> None:
+    config = SimpleNamespace(settings=SimpleNamespace(axiom_env="prod"))
+    app = SimpleNamespace(state=SimpleNamespace(config=config))
+    scope = {
+        "type": "http",
+        "method": "GET",
+        "path": "/",
+        "headers": [(b"cf-connecting-ip", b"198.51.100.8, 203.0.113.9")],
+        "client": ("10.0.0.1", 1234),
+        "app": app,
     }
 
     assert default_identity(Request(scope)) == "ip:10.0.0.1"
@@ -198,13 +258,13 @@ def test_exempt_paths_are_never_limited(tight_client: TestClient) -> None:
     assert statuses == [200] * 10
 
 
-def test_separate_sessions_get_separate_budgets(tight_client: TestClient) -> None:
+def test_session_header_cannot_bypass_the_peer_rate_limit(tight_client: TestClient) -> None:
     for _ in range(3):
-        tight_client.get(HEALTH, headers={SESSION_HEADER: "exhausted"})
+        tight_client.get(HEALTH, headers={"X-Session-Id": "exhausted"})
 
-    response = tight_client.get(HEALTH, headers={SESSION_HEADER: "fresh"})
+    response = tight_client.get(HEALTH, headers={"X-Session-Id": "fresh"})
 
-    assert response.status_code == 200
+    assert response.status_code == 429
 
 
 def test_limiter_can_be_disabled(knobs: Knobs) -> None:

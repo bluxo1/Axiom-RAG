@@ -117,8 +117,9 @@ budget:
   monthly_spend_usd: 10.0
 
 # ─── Rate limiting (PRD.md §8 security, Design.md §6) ─────────────────────────
-# Per-session token bucket; dev is generous, prod is tightened in the Phase 4
-# hardening sweep. Identity is the X-Session-Id header, falling back to client IP.
+# Token bucket; dev is generous, prod is tightened in the Phase 4 hardening
+# sweep. Production uses Render's Cloudflare client-IP header; local runs use
+# the network peer. Caller-supplied session IDs are ignored.
 rate_limit:
   enabled: true
   capacity: 30 # burst: requests available at once
