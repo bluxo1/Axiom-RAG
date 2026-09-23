@@ -21,6 +21,7 @@ already been sent, so a pipeline error (e.g. a 502 upstream) is delivered as an
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Iterator
 
 from fastapi import APIRouter
@@ -28,12 +29,13 @@ from starlette.responses import StreamingResponse
 
 from app.api.deps import RuntimeDep
 from app.api.v1.schemas import ChatRequest, ChatResponse
-from app.core.errors import AxiomError
+from app.core.errors import AxiomError, ErrorCode
 from app.rag.types import ChatResult
 from app.services.chat import answer_prepared, prepare_question
 from app.services.runtime import Runtime
 
 router = APIRouter(tags=["chat"])
+logger = logging.getLogger(__name__)
 
 # Roughly a word at a time — enough to look live without shipping one byte per
 # event. The answer is already complete and verified before we chunk it.
@@ -58,6 +60,19 @@ def _stream(runtime: Runtime, question: str, session_id: str) -> Iterator[str]:
         result: ChatResult = answer_prepared(runtime, question=question, session_id=session_id)
     except AxiomError as exc:
         yield _sse("error", {"code": exc.code.value, "message": exc.message})
+        return
+    except Exception:
+        # Exception handlers cannot replace the response after StreamingResponse
+        # has sent its headers. Keep the SSE contract intact and log the failure
+        # for operators instead of leaving the client with a truncated stream.
+        logger.exception("unhandled_chat_stream_error")
+        yield _sse(
+            "error",
+            {
+                "code": ErrorCode.INTERNAL_ERROR.value,
+                "message": "The request could not be completed. Please try again.",
+            },
+        )
         return
 
     # Verification has passed by now; only verified tokens are streamed.
