@@ -26,6 +26,7 @@ from uuid import uuid4
 from starlette.status import (
     HTTP_400_BAD_REQUEST,
     HTTP_502_BAD_GATEWAY,
+    HTTP_503_SERVICE_UNAVAILABLE,
     HTTP_504_GATEWAY_TIMEOUT,
 )
 
@@ -33,7 +34,7 @@ from app.confidence.router import RouterDecision, route
 from app.confidence.scoring import score_confidence
 from app.core.errors import AxiomError, ErrorCode
 from app.db.models import Document, Message, Session
-from app.llm.provider import LLMTimeoutError
+from app.llm.provider import LLMProviderError, LLMTimeoutError
 from app.rag.generation import MalformedStructuredAnswerError, parse_structured_answer
 from app.rag.grounding import GroundingOutcome, verify_and_ground
 from app.rag.prompts import build_structured_system_prompt
@@ -177,6 +178,15 @@ def _complete_with_timeout_retry(runtime: Runtime, system_prompt: str, question:
                     status_code=HTTP_504_GATEWAY_TIMEOUT,
                 ) from exc
             attempts_left -= 1
+        except LLMProviderError as exc:
+            # The provider failed outright (Gemini 429 quota, upstream 5xx
+            # "model overloaded", rejected request). Not a bug here: surface
+            # the structured 503 instead of a bare 500 (Design.md §5).
+            raise AxiomError(
+                ErrorCode.LLM_PROVIDER_FAILED,
+                "The language model provider failed. Try again in a moment.",
+                status_code=HTTP_503_SERVICE_UNAVAILABLE,
+            ) from exc
 
 
 def _try_web_fallback(
@@ -208,6 +218,8 @@ def _try_web_fallback(
     if not web_chunks:
         return None
 
+    # Let structured generation errors reach the caller. Do not turn provider
+    # failures into a misleading refusal after the search succeeds.
     outcome = _generate_grounded(runtime, question, web_chunks)
     if not outcome.grounded:
         return None
