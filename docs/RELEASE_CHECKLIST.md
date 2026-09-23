@@ -2,9 +2,9 @@
 
 The public app is deployed and its backend health check returns HTTP 200. The
 remaining v1 evidence is the functional browser smoke test, live RAGAS scores,
-live latency result, and demo video. Additional public-API security hardening is
-in [PR #10](https://github.com/bluxo1/Axiom-RAG/pull/10) and will not reach the
-deployed backend until that PR is merged and Render redeploys.
+live latency result, and demo video. Public-API security hardening was merged in
+[PR #10](https://github.com/bluxo1/Axiom-RAG/pull/10). Confirm Render has
+deployed the merged revision before completing the live smoke tests below.
 
 Never paste secrets into GitHub, screenshots, terminal transcripts, or this
 repository. Store them only in the provider dashboards and the ignored `.env`.
