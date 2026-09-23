@@ -16,6 +16,7 @@ from app.config import Knobs
 from app.rag.parsing import (
     ParsingError,
     UploadTooLargeError,
+    _fetch_safe_url,
     enforce_upload_limit,
     ensure_safe_url,
 )
@@ -87,8 +88,83 @@ def test_hostname_resolving_to_private_address_is_refused(
 
     monkeypatch.setattr(socket, "getaddrinfo", _fake_getaddrinfo)
 
-    with pytest.raises(ParsingError, match="does not resolve to a public address"):
+    with pytest.raises(ParsingError, match="non-public address"):
         ensure_safe_url("https://internal.example.com/docs")
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://user:password@example.com/",
+        "https://example.com:8443/",
+        "http://example.com:443/",
+    ],
+)
+def test_urls_with_credentials_or_nonstandard_ports_are_refused(url: str) -> None:
+    with pytest.raises(ParsingError):
+        ensure_safe_url(url)
+
+
+def test_redirect_to_private_address_is_refused_before_second_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, str]] = []
+
+    def _fake_getaddrinfo(host: str, *_args: object, **_kwargs: object) -> list[tuple[object, ...]]:
+        if host == "public.example":
+            return [(AddressFamily.AF_INET, SocketKind.SOCK_STREAM, 6, "", ("93.184.216.34", 0))]
+        raise AssertionError("private redirect must be rejected before DNS lookup")
+
+    def _fake_request(
+        url: str, address: str, *, deadline: float
+    ) -> tuple[int, dict[str, str], bytes]:
+        assert deadline > 0
+        calls.append((url, address))
+        return 302, {"location": "http://127.0.0.1/admin"}, b""
+
+    monkeypatch.setattr(socket, "getaddrinfo", _fake_getaddrinfo)
+    monkeypatch.setattr("app.rag.parsing._request_pinned", _fake_request)
+
+    with pytest.raises(ParsingError):
+        _fetch_safe_url("https://public.example/start")
+
+    assert calls == [("https://public.example/start", "93.184.216.34")]
+
+
+def test_redirect_destination_is_resolved_and_pinned_again(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    resolved_hosts: list[str] = []
+    fetched: list[tuple[str, str]] = []
+    deadlines: list[float] = []
+
+    def _fake_getaddrinfo(host: str, *_args: object, **_kwargs: object) -> list[tuple[object, ...]]:
+        resolved_hosts.append(host)
+        address = "93.184.216.34" if host == "first.example" else "1.1.1.1"
+        return [(AddressFamily.AF_INET, SocketKind.SOCK_STREAM, 6, "", (address, 0))]
+
+    def _fake_request(
+        url: str, address: str, *, deadline: float
+    ) -> tuple[int, dict[str, str], bytes]:
+        deadlines.append(deadline)
+        fetched.append((url, address))
+        if len(fetched) == 1:
+            return 302, {"location": "https://second.example/final"}, b""
+        return 200, {"content-length": "4"}, b"page"
+
+    monkeypatch.setattr(socket, "getaddrinfo", _fake_getaddrinfo)
+    monkeypatch.setattr("app.rag.parsing._request_pinned", _fake_request)
+
+    final_url, body = _fetch_safe_url("https://first.example/start")
+
+    assert resolved_hosts == ["first.example", "second.example"]
+    assert fetched == [
+        ("https://first.example/start", "93.184.216.34"),
+        ("https://second.example/final", "1.1.1.1"),
+    ]
+    assert final_url == "https://second.example/final"
+    assert body == b"page"
+    assert len(set(deadlines)) == 1
 
 
 def test_hostname_resolving_to_public_address_is_accepted(
@@ -141,6 +217,21 @@ def test_oversized_upload_returns_413(client: TestClient) -> None:
     body = response.json()["error"]
     assert body["code"] == "VALIDATION_ERROR"
     assert "limit" in body["message"]
+
+
+def test_cors_is_exact_and_does_not_enable_credentials(client: TestClient) -> None:
+    response = client.options(
+        "/api/v1/chat",
+        headers={
+            "Origin": "http://localhost:5173",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "content-type",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://localhost:5173"
+    assert "access-control-allow-credentials" not in response.headers
 
 
 # ─── config wiring ────────────────────────────────────────────────────────────

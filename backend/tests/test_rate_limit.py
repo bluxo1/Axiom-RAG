@@ -15,7 +15,7 @@ from fastapi.testclient import TestClient
 from starlette.requests import Request
 
 from app.config import AxiomConfig, Knobs, RateLimitSection, Settings
-from app.core.rate_limit import SESSION_HEADER, TokenBucketLimiter, default_identity
+from app.core.rate_limit import TokenBucketLimiter, default_identity
 from app.main import create_app
 from tests.helpers import make_runtime
 
@@ -93,7 +93,7 @@ def test_identities_have_separate_budgets() -> None:
 
 
 def test_bucket_store_stays_bounded() -> None:
-    """An unbounded identity map is a memory leak on a public endpoint."""
+    """Unseen clients share overflow capacity instead of evicting prior buckets."""
     clock = FakeClock()
     limiter = TokenBucketLimiter(capacity=1, refill_per_second=1.0, max_identities=20, clock=clock)
 
@@ -102,6 +102,7 @@ def test_bucket_store_stays_bounded() -> None:
         limiter.check(f"identity-{index}")
 
     assert limiter.tracked_identities <= 20
+    assert limiter.check("a-new-identity").allowed is False
 
 
 @pytest.mark.parametrize(
@@ -118,16 +119,16 @@ def test_invalid_limiter_parameters_are_rejected(
 # ─── Identity ─────────────────────────────────────────────────────────────────
 
 
-def test_session_header_becomes_the_identity() -> None:
+def test_caller_supplied_session_header_does_not_change_identity() -> None:
     scope = {
         "type": "http",
         "method": "GET",
         "path": "/",
-        "headers": [(SESSION_HEADER.lower().encode(), b"s-1")],
+        "headers": [(b"x-session-id", b"s-1")],
         "client": ("10.0.0.1", 1234),
     }
 
-    assert default_identity(Request(scope)) == "session:s-1"
+    assert default_identity(Request(scope)) == "ip:10.0.0.1"
 
 
 def test_client_address_is_the_fallback_identity() -> None:
@@ -198,13 +199,13 @@ def test_exempt_paths_are_never_limited(tight_client: TestClient) -> None:
     assert statuses == [200] * 10
 
 
-def test_separate_sessions_get_separate_budgets(tight_client: TestClient) -> None:
+def test_session_header_cannot_bypass_the_peer_rate_limit(tight_client: TestClient) -> None:
     for _ in range(3):
-        tight_client.get(HEALTH, headers={SESSION_HEADER: "exhausted"})
+        tight_client.get(HEALTH, headers={"X-Session-Id": "exhausted"})
 
-    response = tight_client.get(HEALTH, headers={SESSION_HEADER: "fresh"})
+    response = tight_client.get(HEALTH, headers={"X-Session-Id": "fresh"})
 
-    assert response.status_code == 200
+    assert response.status_code == 429
 
 
 def test_limiter_can_be_disabled(knobs: Knobs) -> None:

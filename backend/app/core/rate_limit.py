@@ -1,11 +1,12 @@
-"""Per-session rate limiting (PRD.md §8 security NFR, Design.md §6).
+"""Per-client-address rate limiting (PRD.md §8 security NFR, Design.md §6).
 
 A token bucket per identity: `capacity` requests available at once, refilled at
 `refill_per_second`. Dev is generous; the Phase 4 hardening sweep tightens prod.
 
-Scope of this implementation: the bucket store is in-process, so limits are
-per-worker. That is deliberate for Phase 0 — a shared store (Redis) is part of
-the Phase 4 sweep, not the skeleton.
+The bucket store is in-process, so limits are per-worker. When the bounded
+identity table fills, new addresses share an overflow bucket instead of evicting
+old buckets and receiving a fresh burst. A shared store is still needed to make
+limits consistent across multiple workers or instances.
 """
 
 from __future__ import annotations
@@ -24,7 +25,7 @@ from starlette.types import ASGIApp
 
 from app.core.errors import ErrorCode, error_response
 
-SESSION_HEADER = "X-Session-Id"
+_OVERFLOW_IDENTITY = "__overflow__"
 
 
 @dataclass(frozen=True)
@@ -83,9 +84,17 @@ class TokenBucketLimiter:
             now = self._clock()
             bucket = self._buckets.get(identity)
             if bucket is None:
-                self._evict_if_full()
-                bucket = _Bucket(tokens=self._capacity, last_seen=now)
-                self._buckets[identity] = bucket
+                if len(self._buckets) >= self._max_identities - 1:
+                    identity = _OVERFLOW_IDENTITY
+                    bucket = self._buckets.get(identity)
+                if bucket is not None:
+                    elapsed = max(0.0, now - bucket.last_seen)
+                    bucket.tokens = min(
+                        self._capacity, bucket.tokens + elapsed * self._refill_per_second
+                    )
+                else:
+                    bucket = _Bucket(tokens=self._capacity, last_seen=now)
+                    self._buckets[identity] = bucket
             else:
                 elapsed = max(0.0, now - bucket.last_seen)
                 bucket.tokens = min(
@@ -106,30 +115,9 @@ class TokenBucketLimiter:
                 retry_after_seconds=deficit / self._refill_per_second,
             )
 
-    def _evict_if_full(self) -> None:
-        """Drop the idlest buckets so the store stays bounded.
-
-        Called with the lock held. Evicting a bucket only ever *grants* budget,
-        never revokes it, so a dropped caller is not penalised.
-        """
-        if len(self._buckets) < self._max_identities:
-            return
-        target = max(1, self._max_identities // 10)
-        idlest = sorted(self._buckets.items(), key=lambda item: item[1].last_seen)
-        for identity, _ in idlest[:target]:
-            del self._buckets[identity]
-
 
 def default_identity(request: Request) -> str:
-    """Identify the caller: session header first, client address otherwise.
-
-    Design.md §6 specifies a per-session bucket. Sessions arrive from Phase 1
-    (`POST /chat {session_id}`); until then, and for any request without the
-    header, the peer address is the identity.
-    """
-    session_id = request.headers.get(SESSION_HEADER, "").strip()
-    if session_id:
-        return f"session:{session_id}"
+    """Identify the network peer; caller-controlled session IDs are not trusted."""
     client = request.client
     if client is not None and client.host:
         return f"ip:{client.host}"

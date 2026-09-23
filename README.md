@@ -213,3 +213,6 @@ hallucinated. Phase 4 adds the golden-set eval harness (see
 configs. The remaining v1 gates are the live browser smoke tests, RAGAS and P95
 evidence, and a short demo recording; follow
 [docs/RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md) to finish them.
+
+The public demo has no login: visitors share one document corpus and can list,
+upload, and delete its documents. Do not upload confidential material.

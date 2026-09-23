@@ -118,7 +118,8 @@ budget:
 
 # ─── Rate limiting (PRD.md §8 security, Design.md §6) ─────────────────────────
 # Per-session token bucket; dev is generous, prod is tightened in the Phase 4
-# hardening sweep. Identity is the X-Session-Id header, falling back to client IP.
+# hardening sweep. Identity uses the network peer address; caller-supplied session
+# IDs are ignored so a client cannot evade limits by changing a request header.
 rate_limit:
   enabled: true
   capacity: 30 # burst: requests available at once

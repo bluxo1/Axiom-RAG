@@ -104,6 +104,23 @@ blocker (EVAL.md §4): re-run `pytest backend/evals/` before shipping further.
 
 ## Operational notes
 
+- **Public demo data.** The API intentionally has no login so the demo stays
+  open. CORS only restricts browser origins; it is not authentication. Every
+  visitor shares the same document corpus and can upload, list, or delete its
+  documents. Never ingest confidential material.
+- **Request limits.** API bodies must include `Content-Length`; JSON requests are
+  limited to 1 MiB. Document uploads are limited to the configured file size
+  (20 MiB by default) plus bounded multipart overhead, and the file itself is
+  read only up to the configured limit plus one byte before rejection.
+- **URL ingestion.** Only HTTP/HTTPS on ports 80/443 is accepted. Each redirect
+  is revalidated, DNS answers are pinned to the outbound connection, redirects
+  are limited to four, response bodies to 5 MiB, and the total fetch time to
+  20 seconds.
+- **Rate-limit scope.** Limits use the network peer address; caller-provided
+  session IDs cannot choose a fresh bucket. New addresses share a bounded
+  overflow bucket rather than resetting existing limits. Buckets are still
+  process-local, so run one worker/instance for the configured cap to apply as
+  intended; a shared Redis limiter is needed before scaling out.
 - **Chroma network isolation.** Chroma is local-development only and its Compose
   port binds to `127.0.0.1`. Keep it that way: the Chroma Python package is used
   only as an HTTP client to the native Rust server image. The current

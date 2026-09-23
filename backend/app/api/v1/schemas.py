@@ -29,7 +29,7 @@ class DocumentList(BaseModel):
 
 
 class UrlIngestRequest(BaseModel):
-    url: str = Field(min_length=1)
+    url: str = Field(min_length=1, max_length=2048)
 
 
 class CitationModel(BaseModel):
