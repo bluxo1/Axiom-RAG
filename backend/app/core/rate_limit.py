@@ -1,15 +1,17 @@
-"""Per-session rate limiting (PRD.md §8 security NFR, Design.md §6).
+"""Per-client-address rate limiting (PRD.md §8 security NFR, Design.md §6).
 
 A token bucket per identity: `capacity` requests available at once, refilled at
 `refill_per_second`. Dev is generous; the Phase 4 hardening sweep tightens prod.
 
-Scope of this implementation: the bucket store is in-process, so limits are
-per-worker. That is deliberate for Phase 0 — a shared store (Redis) is part of
-the Phase 4 sweep, not the skeleton.
+The bucket store is in-process, so limits are per-worker. When the bounded
+identity table fills, new addresses share an overflow bucket instead of evicting
+old buckets and receiving a fresh burst. A shared store is still needed to make
+limits consistent across multiple workers or instances.
 """
 
 from __future__ import annotations
 
+import ipaddress
 import math
 import threading
 import time
@@ -23,8 +25,6 @@ from starlette.status import HTTP_429_TOO_MANY_REQUESTS
 from starlette.types import ASGIApp
 
 from app.core.errors import ErrorCode, error_response
-
-SESSION_HEADER = "X-Session-Id"
 
 
 @dataclass(frozen=True)
@@ -65,6 +65,7 @@ class TokenBucketLimiter:
         self._max_identities = max_identities
         self._clock = clock
         self._buckets: dict[str, _Bucket] = {}
+        self._overflow_bucket: _Bucket | None = None
         self._lock = threading.Lock()
 
     @property
@@ -75,7 +76,7 @@ class TokenBucketLimiter:
     def tracked_identities(self) -> int:
         """Number of live buckets. Bounded by `max_identities`."""
         with self._lock:
-            return len(self._buckets)
+            return len(self._buckets) + (self._overflow_bucket is not None)
 
     def check(self, identity: str) -> RateLimitDecision:
         """Consume one token for `identity`, refilling for elapsed time first."""
@@ -83,14 +84,16 @@ class TokenBucketLimiter:
             now = self._clock()
             bucket = self._buckets.get(identity)
             if bucket is None:
-                self._evict_if_full()
-                bucket = _Bucket(tokens=self._capacity, last_seen=now)
-                self._buckets[identity] = bucket
-            else:
-                elapsed = max(0.0, now - bucket.last_seen)
-                bucket.tokens = min(
-                    self._capacity, bucket.tokens + elapsed * self._refill_per_second
-                )
+                if len(self._buckets) < self._max_identities - 1:
+                    bucket = _Bucket(tokens=self._capacity, last_seen=now)
+                    self._buckets[identity] = bucket
+                else:
+                    bucket = self._overflow_bucket
+                    if bucket is None:
+                        bucket = _Bucket(tokens=self._capacity, last_seen=now)
+                        self._overflow_bucket = bucket
+            elapsed = max(0.0, now - bucket.last_seen)
+            bucket.tokens = min(self._capacity, bucket.tokens + elapsed * self._refill_per_second)
             bucket.last_seen = now
 
             if bucket.tokens >= 1.0:
@@ -106,30 +109,26 @@ class TokenBucketLimiter:
                 retry_after_seconds=deficit / self._refill_per_second,
             )
 
-    def _evict_if_full(self) -> None:
-        """Drop the idlest buckets so the store stays bounded.
-
-        Called with the lock held. Evicting a bucket only ever *grants* budget,
-        never revokes it, so a dropped caller is not penalised.
-        """
-        if len(self._buckets) < self._max_identities:
-            return
-        target = max(1, self._max_identities // 10)
-        idlest = sorted(self._buckets.items(), key=lambda item: item[1].last_seen)
-        for identity, _ in idlest[:target]:
-            del self._buckets[identity]
-
 
 def default_identity(request: Request) -> str:
-    """Identify the caller: session header first, client address otherwise.
+    """Use the trusted Render client-IP header in prod, otherwise the peer address.
 
-    Design.md §6 specifies a per-session bucket. Sessions arrive from Phase 1
-    (`POST /chat {session_id}`); until then, and for any request without the
-    header, the peer address is the identity.
+    Render's public edge supplies ``CF-Connecting-IP``. The value is accepted
+    only in prod and only when it is a single valid IP address. Caller-supplied
+    session IDs and ``X-Forwarded-For`` are never used as identities.
     """
-    session_id = request.headers.get(SESSION_HEADER, "").strip()
-    if session_id:
-        return f"session:{session_id}"
+    app = request.scope.get("app")
+    config = getattr(getattr(app, "state", None), "config", None)
+    settings = getattr(config, "settings", None)
+    if getattr(settings, "axiom_env", None) == "prod":
+        forwarded_ip = request.headers.get("CF-Connecting-IP", "").strip()
+        try:
+            address = ipaddress.ip_address(forwarded_ip)
+        except ValueError:
+            pass
+        else:
+            return f"ip:{address.compressed}"
+
     client = request.client
     if client is not None and client.host:
         return f"ip:{client.host}"

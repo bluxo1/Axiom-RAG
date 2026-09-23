@@ -21,6 +21,7 @@ from app.config import AxiomConfig, get_config
 from app.core.errors import register_exception_handlers
 from app.core.logging_setup import configure_logging
 from app.core.rate_limit import RateLimitMiddleware, TokenBucketLimiter
+from app.core.request_limits import RequestSizeLimitMiddleware
 from app.core.security_headers import SecurityHeadersMiddleware
 from app.db.session import Database
 from app.services.runtime import Runtime
@@ -83,6 +84,12 @@ def create_app(config: AxiomConfig | None = None, runtime: Runtime | None = None
 
     # Middleware added later runs earlier: CORS must wrap the rate limiter so a
     # browser can read a 429 instead of seeing an opaque CORS failure.
+    app.add_middleware(
+        RequestSizeLimitMiddleware,
+        api_prefix=config.app.api_prefix,
+        upload_path=f"{config.app.api_prefix}/documents",
+        max_upload_bytes=config.ingestion.max_upload_mb * 1024 * 1024,
+    )
     if config.rate_limit.enabled:
         app.add_middleware(
             RateLimitMiddleware,
@@ -96,9 +103,8 @@ def create_app(config: AxiomConfig | None = None, runtime: Runtime | None = None
     app.add_middleware(
         CORSMiddleware,
         allow_origins=list(config.app.cors_origins),
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+        allow_headers=["Content-Type"],
         expose_headers=["Retry-After", "X-RateLimit-Limit", "X-RateLimit-Remaining"],
     )
     # Added last => outermost => runs on every response (including 429s and CORS

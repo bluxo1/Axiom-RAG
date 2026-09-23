@@ -37,7 +37,8 @@ def _too_large(exc: UploadTooLargeError) -> AxiomError:
 
 @router.post("", response_model=DocumentSummary, summary="Upload a document (PDF/TXT/MD)")
 def upload_document(runtime: RuntimeDep, file: Annotated[UploadFile, File()]) -> DocumentSummary:
-    data = file.file.read()
+    limit = runtime.config.ingestion.max_upload_mb * 1024 * 1024
+    data = file.file.read(limit + 1)
     try:
         result = ingest_upload(runtime, name=file.filename or "upload", data=data)
     except UploadTooLargeError as exc:
