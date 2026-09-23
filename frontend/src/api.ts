@@ -121,30 +121,49 @@ export async function chatStream(
   let buffer = "";
   let done: ChatResponse | null = null;
 
+  const handleFrame = (frame: string): void => {
+    const parsed = parseFrame(frame);
+    if (!parsed) {
+      return;
+    }
+    if (parsed.event === "status") {
+      handlers.onStatus?.(String((parsed.data as { state?: string }).state ?? ""));
+    } else if (parsed.event === "token") {
+      handlers.onToken?.(String((parsed.data as { text?: string }).text ?? ""));
+    } else if (parsed.event === "done") {
+      done = parsed.data as ChatResponse;
+    } else if (parsed.event === "error") {
+      const err = parsed.data as { message?: string };
+      throw new Error(err.message ?? "stream failed");
+    }
+  };
+
   for (;;) {
     const { value, done: finished } = await reader.read();
     if (finished) {
       break;
     }
     buffer += decoder.decode(value, { stream: true });
-    // Frames are separated by a blank line; process every complete one.
-    let split: number;
-    while ((split = buffer.indexOf("\n\n")) !== -1) {
-      const frame = buffer.slice(0, split);
-      buffer = buffer.slice(split + 2);
-      const parsed = parseFrame(frame);
-      if (!parsed) {
-        continue;
-      }
-      if (parsed.event === "status") {
-        handlers.onStatus?.(String((parsed.data as { state?: string }).state ?? ""));
-      } else if (parsed.event === "token") {
-        handlers.onToken?.(String((parsed.data as { text?: string }).text ?? ""));
-      } else if (parsed.event === "done") {
-        done = parsed.data as ChatResponse;
-      } else if (parsed.event === "error") {
-        const err = parsed.data as { message?: string };
-        throw new Error(err.message ?? "stream failed");
+    // SSE permits LF or CRLF line endings. Keep incomplete delimiters in the
+    // buffer in case a CRLF pair is split across network chunks.
+    let boundary: RegExpExecArray | null;
+    while ((boundary = /\r?\n\r?\n/.exec(buffer)) !== null) {
+      handleFrame(buffer.slice(0, boundary.index));
+      buffer = buffer.slice(boundary.index + boundary[0].length);
+    }
+  }
+
+  // Flush any UTF-8 bytes held by the decoder. Some proxies close immediately
+  // after the final event data instead of forwarding its blank-line terminator.
+  buffer += decoder.decode();
+  if (buffer.trim()) {
+    try {
+      handleFrame(buffer);
+    } catch (error) {
+      // A transport may stop mid-JSON. Keep the clearer incomplete-stream
+      // error below instead of exposing JSON.parse's low-level message.
+      if (!(error instanceof SyntaxError)) {
+        throw error;
       }
     }
   }
@@ -158,7 +177,7 @@ export async function chatStream(
 function parseFrame(frame: string): { event: string; data: unknown } | null {
   let event = "";
   let data = "";
-  for (const line of frame.split("\n")) {
+  for (const line of frame.split(/\r?\n/)) {
     if (line.startsWith("event: ")) {
       event = line.slice("event: ".length);
     } else if (line.startsWith("data: ")) {
