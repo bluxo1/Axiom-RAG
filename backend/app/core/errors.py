@@ -60,6 +60,11 @@ class ErrorCode(StrEnum):
     # spent — a 504, distinct from a malformed response (502). Raised from the
     # grounded-chat path.
     LLM_TIMEOUT = "LLM_TIMEOUT"
+    # The LLM call failed outright (quota/rate limit, upstream 5xx "model
+    # overloaded", rejected request) — a 503, the upstream provider failed us.
+    # Distinct from a bug (500) and from a timeout (504). Raised from the
+    # grounded-chat path via `LLMProviderError`.
+    LLM_PROVIDER_FAILED = "LLM_PROVIDER_FAILED"
     INTERNAL_ERROR = "INTERNAL_ERROR"
 
 

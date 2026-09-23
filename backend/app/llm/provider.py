@@ -31,6 +31,17 @@ class LLMTimeoutError(Exception):
     """
 
 
+class LLMProviderError(Exception):
+    """The LLM call failed for a non-timeout reason.
+
+    Rate limits (Gemini free-tier 429), upstream 5xx "model overloaded", or a
+    rejected request arriving through the OpenAI SDK's `APIError` family. A
+    plain exception, not an `AxiomError`: providers stay free of HTTP concerns.
+    The chat service surfaces it as the structured 503 `LLM_PROVIDER_FAILED`
+    (Design.md §5) instead of letting it escape into a bare 500.
+    """
+
+
 @runtime_checkable
 class LLMProvider(Protocol):
     """A single grounded, structured-output completion call."""
@@ -124,4 +135,9 @@ class OpenAILLM:
             # Design.md §5: a timeout is retryable; surface it as our own type so
             # the chat service can retry once and then return a 504.
             raise LLMTimeoutError(str(exc)) from exc
+        except openai.APIError as exc:
+            # Any other SDK failure (429 quota, upstream 5xx, rejected request)
+            # is the provider failing us, not a bug here: surface it as our own
+            # type so the chat path returns a structured 503, never a bare 500.
+            raise LLMProviderError(str(exc)) from exc
         return (response.message.content or "").strip()
