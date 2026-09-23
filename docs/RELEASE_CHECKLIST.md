@@ -1,13 +1,20 @@
 # Axiom — v1 Release Checklist
 
-The code, offline evaluation, security hardening, container build, and CI gates
-are complete. The steps below require account access, live provider calls, or a
-human recording and therefore must be finished by the project owner.
+The public app is deployed and its backend health check returns HTTP 200. The
+remaining v1 evidence is the functional browser smoke test, live RAGAS scores,
+live latency result, and demo video. Additional public-API security hardening is
+in [PR #10](https://github.com/bluxo1/Axiom-RAG/pull/10) and will not reach the
+deployed backend until that PR is merged and Render redeploys.
 
 Never paste secrets into GitHub, screenshots, terminal transcripts, or this
 repository. Store them only in the provider dashboards and the ignored `.env`.
 
 ## 1. Deploy the public app
+
+Current deployment: [frontend](https://axiom-rag.vercel.app/) and
+[backend /health](https://axiom-backend-7n5c.onrender.com/health). The health
+endpoint was verified live; finish the three functional browser smoke tests
+below.
 
 Follow [`DEPLOY_RUNBOOK.md`](DEPLOY_RUNBOOK.md) in order:
 

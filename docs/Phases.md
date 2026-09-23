@@ -68,7 +68,7 @@
 - [ ] Run the latency gate against the live deployment and record the result
 - [x] Rate limiting + error handling sweep
 - [x] Dockerize + deployment configs (Render + Vercel + Neon)
-- [ ] Deploy the public app and record its URL
+- [x] Deploy the public app and record its URL
 - [x] README: architecture diagram + offline eval table
 - [ ] README: demo GIF/video
 
