@@ -196,10 +196,15 @@ docs/        Spec: PRD, Architecture, Design, Rules, Phases, ADRs
 ## Status
 
 **Phases 0-3 and the Phase 4 implementation are complete, and the public app is
-deployed. Final release evidence is still pending.**
+deployed. The v1 release is not complete until the remaining live evidence is
+recorded.**
 
 - **Frontend:** [axiom-rag.vercel.app](https://axiom-rag.vercel.app)
 - **Backend health:** [axiom-backend-7n5c.onrender.com/health](https://axiom-backend-7n5c.onrender.com/health)
+
+**Public demo:** No sign-in is required. All visitors share the same document
+corpus and can list, upload, and delete documents. Do not upload confidential
+material.
 
 The backend health endpoint returns HTTP 200, and its CORS preflight accepts
 the deployed frontend origin. The full
@@ -210,6 +215,8 @@ LLM/embedding/search calls. Fabricated citations cannot reach the UI (proven by
 tests), and out-of-corpus questions are flagged or web-answered, never
 hallucinated. Phase 4 adds the golden-set eval harness (see
 [Evaluation](#evaluation)), threshold tuning, security hardening, and deploy
-configs. The remaining v1 gates are the live browser smoke tests, RAGAS and P95
-evidence, and a short demo recording; follow
-[docs/RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md) to finish them.
+configs. To complete v1, record the three live browser smoke tests, RAGAS
+faithfulness and answer-relevancy results, the live P95 latency result, and a
+demo video shorter than 90 seconds. Then close the remaining Phase 4 items in
+[docs/Phases.md](docs/Phases.md) and follow
+[docs/RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md).
