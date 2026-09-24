@@ -43,9 +43,13 @@ python -m pip install -e ".[dev,eval]"
 pytest evals/ -v -s --run-llm
 ```
 
-The command prints faithfulness and answer-relevancy scores and fails if they
-miss 0.85 and 0.80 respectively. Copy the results into a dated file under
-`backend/evals/reports/` and replace the `--run-llm` placeholders in README.
+The runner saves completed answers and judge metrics in ignored `data/ragas/`.
+If the provider quota stops the run, wait until capacity is available and rerun
+the same command; it resumes from the saved work. When all in-corpus entries
+are scored, the test prints the scores and writes a dated file under
+`backend/evals/reports/`. It fails if faithfulness is below 0.85 or answer
+relevancy is below 0.80. Replace the `--run-llm` placeholders in README only
+after reviewing the completed report.
 
 ## 3. Capture live latency evidence
 

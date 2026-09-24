@@ -41,6 +41,14 @@ pytest evals/ -v             # recorded-fixture mode (CI default)
 pytest evals/ -v -s --run-llm # live scores printed; costs tokens
 ```
 
+The live runner saves each completed answer and judge metric under the ignored
+`data/ragas/` directory. If the provider rejects a request because its quota is
+exhausted, rerun the same command after quota is available; completed work is
+reused. Keep the corpus, app code, config, and model selection unchanged while
+resuming. The runner isolates its temporary Chroma collection and writes
+`evals/reports/live-ragas-<date>.md` only when all in-corpus entries are scored.
+The report records the measured scores even if a target is missed.
+
 The optional RAGAS extra is never installed in production or CI. Current
 RAGAS advisories `PYSEC-2026-3046` and `PYSEC-2026-3047` affect multimodal
 contexts that dereference caller-provided URLs or file paths. Axiom's live
