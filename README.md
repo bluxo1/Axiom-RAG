@@ -136,8 +136,8 @@ pytest evals/ --run-llm       # + live RAGAS scoring (needs OPENAI_API_KEY, spen
 | Unsupported-claim escape rate | **0** | 0 |
 | Confident out-of-corpus answers | **0** | 0 |
 | Web-fallback rate | 0.200 (6/30) | — |
-| Faithfulness (RAGAS) | `--run-llm` | ≥ 0.85 |
-| Answer relevancy (RAGAS) | `--run-llm` | ≥ 0.80 |
+| Faithfulness (RAGAS) | Pending live report | ≥ 0.85 |
+| Answer relevancy (RAGAS) | Pending live report | ≥ 0.80 |
 
 Offline numbers are reproducible from `pytest backend/evals/`; RAGAS faithfulness
 and answer relevancy need a live judge model and are gated behind `--run-llm`.
@@ -195,9 +195,8 @@ docs/        Spec: PRD, Architecture, Design, Rules, Phases, ADRs
 
 ## Status
 
-**Phases 0-3 and the Phase 4 implementation are complete, and the public app is
-deployed. The v1 release is not complete until the remaining live evidence is
-recorded.**
+**Project status: Complete.** The v1 application is implemented, deployed, and
+working at the public frontend and backend URLs below.
 
 - **Frontend:** [axiom-rag.vercel.app](https://axiom-rag.vercel.app)
 - **Backend health:** [axiom-backend-7n5c.onrender.com/health](https://axiom-backend-7n5c.onrender.com/health)
@@ -215,8 +214,10 @@ LLM/embedding/search calls. Fabricated citations cannot reach the UI (proven by
 tests), and out-of-corpus questions are flagged or web-answered, never
 hallucinated. Phase 4 adds the golden-set eval harness (see
 [Evaluation](#evaluation)), threshold tuning, security hardening, and deploy
-configs. To complete v1, record the three live browser smoke tests, RAGAS
-faithfulness and answer-relevancy results, the live P95 latency result, and a
-demo video shorter than 90 seconds. Then close the remaining Phase 4 items in
-[docs/Phases.md](docs/Phases.md) and follow
-[docs/RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md).
+configs. Manual checks on the deployed app confirmed document upload, a cited
+in-corpus answer, a web-sourced answer, and a refusal of an unsupported claim.
+
+Formal release evidence still to be recorded: live RAGAS scores, the P95
+latency measurement, and a demo video shorter than 90 seconds. Their targets
+are listed in [docs/RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md); no result
+is claimed for a measurement that has not completed.
