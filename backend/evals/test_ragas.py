@@ -43,7 +43,8 @@ def test_ragas_faithfulness_and_relevancy_meet_targets(
         f"(target >= {_FAITHFULNESS_TARGET:.2f})\n"
         f"answer relevancy: {scores.answer_relevancy:.3f} "
         f"(target >= {_ANSWER_RELEVANCY_TARGET:.2f})\n"
-        f"scored entries: {scores.scored}"
+        f"scored entries: {scores.scored}\n"
+        f"report: {scores.report_path}"
     )
     assert scores.faithfulness >= _FAITHFULNESS_TARGET, (
         f"faithfulness {scores.faithfulness:.3f} < {_FAITHFULNESS_TARGET}"
