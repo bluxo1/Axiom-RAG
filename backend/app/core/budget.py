@@ -34,7 +34,6 @@ from functools import lru_cache
 from uuid import uuid4
 
 from sqlalchemy import ColumnElement, func, select
-from sqlalchemy.sql.selectable import Select
 from starlette.status import HTTP_429_TOO_MANY_REQUESTS
 from tiktoken import get_encoding
 from tiktoken.core import Encoding
@@ -254,7 +253,7 @@ class BudgetGuard:
 
     def _aggregate(self, *filters: ColumnElement[bool]) -> _Aggregate:
         """Sum tokens and estimated cost over `spend_log` rows matching filters."""
-        stmt: Select[tuple[int, float]] = select(
+        stmt = select(
             func.coalesce(func.sum(SpendLog.tokens), 0).label("tokens"),
             func.coalesce(func.sum(SpendLog.estimated_cost_usd), 0).label("cost"),
         )
